@@ -1,3 +1,4 @@
+import { request } from '../services/http';
 import { parseShp, parseDbf, combine } from 'shpjs';
 import type { FeatureCollection, Geometry, Polygon, MultiPolygon } from 'geojson';
 import { calculatePerimeterKm, calculatePolygonAreaHectares } from './gisMeasure';
@@ -162,8 +163,8 @@ export async function importShapefileBuffers(
 export async function loadOfficialHinunanganShp(): Promise<ImportedMapResult> {
   try {
     const [shpRes, dbfRes] = await Promise.all([
-      fetch('/data/barangay_level_4/barangay_level_4.shp'),
-      fetch('/data/barangay_level_4/barangay_level_4.dbf'),
+      request('/data/barangay_level_4/barangay_level_4.shp'),
+      request('/data/barangay_level_4/barangay_level_4.dbf'),
     ]);
 
     if (shpRes.ok && dbfRes.ok) {
@@ -182,7 +183,7 @@ export async function loadOfficialHinunanganShp(): Promise<ImportedMapResult> {
   }
 
   // Fallback to pre-processed GeoJSON if binary fetch is restricted
-  const geojsonRes = await fetch('/data/barangay_level_4.geojson');
+  const geojsonRes = await request('/data/barangay_level_4.geojson');
   if (!geojsonRes.ok) {
     throw new Error('Could not load official Hinunangan map dataset');
   }

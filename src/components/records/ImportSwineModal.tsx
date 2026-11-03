@@ -1,3 +1,4 @@
+import { request } from '../../services/http';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Upload,
@@ -592,16 +593,13 @@ export const ImportSwineModal: React.FC<ImportSwineModalProps> = ({
         importStatus = 'pending_sync';
         setImportStatusMsg(`${recordsToImport.length} records queued locally and pending sync.`);
       } else {
-        const res = await fetch('/api/swine-records/import', {
+        const res = await request('/api/swine-records/import', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(storageService.getSessionToken()
               ? { Authorization: `Bearer ${storageService.getSessionToken()}` }
               : {}),
-            'x-user-role': currentUser?.role || 'admin',
-            'x-user-id': currentUser?.id || 'admin',
-            'x-user-name': currentUser?.name || 'Administrator',
           },
           body: JSON.stringify({
             records: recordsToImport,

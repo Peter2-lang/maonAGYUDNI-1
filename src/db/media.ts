@@ -39,7 +39,7 @@ export async function getAllMedia(category?: string): Promise<MediaItemRecord[]>
     return list;
   } catch (err) {
     console.error('Database query error in getAllMedia:', err);
-    return [];
+    throw new Error('Unable to retrieve media from the database.');
   }
 }
 
@@ -58,7 +58,7 @@ export async function insertMedia(media: Partial<MediaItemRecord>): Promise<Medi
       uploadedBy: media.uploadedBy || null,
     };
 
-    const result = await db.insert(mediaFiles).values(values).returning();
+    const result = await db.insert(mediaFiles).values(values).onConflictDoUpdate({ target: mediaFiles.id, set: values }).returning();
     const r = result[0];
     return {
       id: r.id,

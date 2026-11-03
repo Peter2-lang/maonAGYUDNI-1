@@ -1,3 +1,5 @@
+import { directUpload } from './directUpload';
+import { request } from './http';
 import {
   Barangay,
   CertificateTemplate,
@@ -26,14 +28,9 @@ function getAuthHeaders(): Record<string, string> {
     const token = storageService.getSessionToken();
     if (token) headers.Authorization = `Bearer ${token}`;
     if (user) {
-      headers['x-user-role'] = user.role || 'focal';
-      headers['x-user-id'] = user.id || '';
-      headers['x-user-name'] = user.username || user.name || '';
       if (user.assignedBarangay) {
-        headers['x-user-assigned-barangay'] = user.assignedBarangay;
       }
       if (user.barangay_id) {
-        headers['x-user-barangay-id'] = user.barangay_id;
       }
     }
   } catch {
@@ -73,7 +70,7 @@ async function getFreshAuthHeaders(): Promise<Record<string, string>> {
 }
 
 async function loginAt(endpoint: string, identifier: string, password: string): Promise<{ user: UserAccount; role: string; assignedBarangay?: string; token: string }> {
-  const res = await fetch(endpoint, {
+  const res = await request(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: identifier, email: identifier, password, clientProjectRef: supabaseProjectRef }),
@@ -140,7 +137,7 @@ export const authApi = {
       }
 
       storageService.setSessionToken(session.access_token);
-      const response = await fetch('/api/auth/superadmin-profile', {
+      const response = await request('/api/auth/superadmin-profile', {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
@@ -188,7 +185,7 @@ export const authApi = {
       storageService.setSessionToken(null);
       return null;
     }
-    const res = await fetch('/api/auth/profile', { headers: getAuthHeaders() });
+    const res = await request('/api/auth/profile', { headers: getAuthHeaders() });
     const result = await res.json().catch(() => null);
     if (!res.ok || !result?.success) {
       console.warn('[AUTH] session_restore_profile_rejected', {
@@ -211,7 +208,7 @@ export const authApi = {
   },
 
   async updateProfile(profile: Pick<UserAccount, 'name' | 'phone'>): Promise<UserAccount> {
-    const res = await fetch('/api/auth/profile', {
+    const res = await request('/api/auth/profile', {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify(profile),
@@ -230,16 +227,20 @@ export const authApi = {
   },
 
   async logout(): Promise<void> {
-    await supabase?.auth.signOut();
-    storageService.setSessionToken(null);
-    storageService.setCurrentUser(null);
+    try {
+      const result = await supabase?.auth.signOut({ scope: 'local' });
+      if (result?.error) throw result.error;
+    } finally {
+      storageService.setSessionToken(null);
+      storageService.setCurrentUser(null);
+    }
   },
 };
 
 export const accountsApi = {
   async getAll(): Promise<UserAccount[]> {
     const headers = await getFreshAuthHeaders();
-    const res = await fetch('/api/accounts', {
+    const res = await request('/api/accounts', {
       method: 'GET',
       headers,
     });
@@ -253,7 +254,7 @@ export const accountsApi = {
 
   async create(user: Partial<UserAccount> & { initialPassword: string; confirmPassword: string }): Promise<UserAccount> {
     const headers = await getFreshAuthHeaders();
-    const res = await fetch('/api/accounts', {
+    const res = await request('/api/accounts', {
       method: 'POST',
       headers,
       body: JSON.stringify(user),
@@ -267,7 +268,7 @@ export const accountsApi = {
 
   async resetPassword(id: string, initialPassword: string, confirmPassword: string): Promise<void> {
     const headers = await getFreshAuthHeaders();
-    const res = await fetch(`/api/accounts/${encodeURIComponent(id)}/reset-password`, {
+    const res = await request(`/api/accounts/${encodeURIComponent(id)}/reset-password`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ initialPassword, confirmPassword }),
@@ -280,7 +281,7 @@ export const accountsApi = {
 
   async update(id: string, user: Partial<UserAccount>): Promise<UserAccount> {
     const headers = await getFreshAuthHeaders();
-    const res = await fetch(`/api/accounts/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/accounts/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(user),
@@ -294,7 +295,7 @@ export const accountsApi = {
 
   async delete(id: string): Promise<boolean> {
     const headers = await getFreshAuthHeaders();
-    const res = await fetch(`/api/accounts/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/accounts/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers,
     });
@@ -308,7 +309,7 @@ export const accountsApi = {
 
 export const moduleDataApi = {
   async get<T>(key: string): Promise<T> {
-    const res = await fetch(`/api/module-data/${encodeURIComponent(key)}`, {
+    const res = await request(`/api/module-data/${encodeURIComponent(key)}`, {
       headers: await getFreshAuthHeaders(),
     });
     const data = await res.json().catch(() => null);
@@ -320,7 +321,7 @@ export const moduleDataApi = {
   },
 
   async save<T>(key: string, value: T): Promise<T> {
-    const res = await fetch(`/api/module-data/${encodeURIComponent(key)}`, {
+    const res = await request(`/api/module-data/${encodeURIComponent(key)}`, {
       method: 'PUT',
       headers: await getFreshAuthHeaders(),
       body: JSON.stringify({ data: value }),
@@ -345,7 +346,7 @@ export const biosecurityApi = {
 
 export const farmersApi = {
   async getAll(): Promise<any[]> {
-    const res = await fetch('/api/farmers', {
+    const res = await request('/api/farmers', {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -365,7 +366,7 @@ export const farmersApi = {
       farmerId,
       isArchived: String(isArchived),
     });
-    const res = await fetch(`/api/swine?${params}`, {
+    const res = await request(`/api/swine?${params}`, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -379,7 +380,7 @@ export const farmersApi = {
 
 export const barangaysApi = {
   async getAll(): Promise<Barangay[]> {
-    const res = await fetch('/api/barangays', {
+    const res = await request('/api/barangays', {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -392,7 +393,7 @@ export const barangaysApi = {
   },
 
   async create(barangay: Partial<Barangay>): Promise<Barangay> {
-    const res = await fetch('/api/barangays', {
+    const res = await request('/api/barangays', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(barangay),
@@ -403,7 +404,7 @@ export const barangaysApi = {
   },
 
   async update(id: string, barangay: Partial<Barangay>): Promise<Barangay> {
-    const res = await fetch(`/api/barangays/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/barangays/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(barangay),
@@ -414,7 +415,7 @@ export const barangaysApi = {
   },
 
   async deactivate(id: string): Promise<void> {
-    const res = await fetch(`/api/barangays/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/barangays/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -425,7 +426,7 @@ export const barangaysApi = {
 
 export const dashboardApi = {
   async getStats(): Promise<any> {
-    const res = await fetch('/api/dashboard/stats', {
+    const res = await request('/api/dashboard/stats', {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -444,7 +445,7 @@ export const certificatesApi = {
       ? `/api/certificates?filter_barangay=${encodeURIComponent(barangay)}`
       : '/api/certificates';
 
-    const res = await fetch(url, {
+    const res = await request(url, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -457,7 +458,7 @@ export const certificatesApi = {
   },
 
   async create(cert: Partial<IssuedCertificate>): Promise<IssuedCertificate> {
-    const res = await fetch('/api/certificates', {
+    const res = await request('/api/certificates', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(cert),
@@ -470,7 +471,7 @@ export const certificatesApi = {
   },
 
   async update(id: string, cert: Partial<IssuedCertificate>): Promise<IssuedCertificate> {
-    const res = await fetch(`/api/certificates/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/certificates/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(cert),
@@ -483,7 +484,7 @@ export const certificatesApi = {
   },
 
   async archive(controlNumber: string): Promise<void> {
-    const res = await fetch(`/api/certificates/${encodeURIComponent(controlNumber)}`, {
+    const res = await request(`/api/certificates/${encodeURIComponent(controlNumber)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -496,7 +497,7 @@ export const certificatesApi = {
 
 export const messagesApi = {
   async getAll(): Promise<MessageItem[]> {
-    const res = await fetch('/api/messages', {
+    const res = await request('/api/messages', {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -509,7 +510,7 @@ export const messagesApi = {
   },
 
   async send(msg: Partial<MessageItem>): Promise<MessageItem> {
-    const res = await fetch('/api/messages', {
+    const res = await request('/api/messages', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(msg),
@@ -522,7 +523,7 @@ export const messagesApi = {
   },
 
   async markRead(id: string): Promise<boolean> {
-    const res = await fetch(`/api/messages/${encodeURIComponent(id)}/read`, {
+    const res = await request(`/api/messages/${encodeURIComponent(id)}/read`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
     });
@@ -530,7 +531,7 @@ export const messagesApi = {
   },
 
   async delete(id: string): Promise<boolean> {
-    const res = await fetch(`/api/messages/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/messages/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -543,7 +544,7 @@ export const mediaApi = {
     const url = category && category !== 'ALL'
       ? `/api/media?category=${encodeURIComponent(category)}`
       : '/api/media';
-    const res = await fetch(url, {
+    const res = await request(url, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -556,7 +557,7 @@ export const mediaApi = {
   },
 
   async upload(payload: { fileName: string; fileUrl?: string; base64?: string; mimeType?: string; category?: string; altText?: string }): Promise<any> {
-    const res = await fetch('/api/media/upload', {
+    const res = await request('/api/media/upload', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
@@ -579,15 +580,7 @@ export const mediaApi = {
     if (!extensionsByMime[file.type]?.includes(extension) || file.size === 0 || file.size > 15 * 1024 * 1024) {
       throw new Error('Choose a JPEG, PNG, WebP, or GIF image no larger than 15 MB.');
     }
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => typeof reader.result === 'string'
-        ? resolve(reader.result)
-        : reject(new Error('Unable to read the selected image.'));
-      reader.onerror = () => reject(new Error('Unable to read the selected image.'));
-      reader.readAsDataURL(file);
-    });
-    return this.upload({ fileName: file.name, mimeType: file.type, base64, category });
+    return directUpload(file, category);
   },
 
   async uploadCertificateAsset(file: File): Promise<{ filePath: string; fileUrl: string; fileSize: number }> {
@@ -601,28 +594,11 @@ export const mediaApi = {
     if (!extensionsByMime[file.type]?.includes(extension) || file.size === 0 || file.size > 15 * 1024 * 1024) {
       throw new Error('Choose a JPEG, PNG, WebP, or GIF image no larger than 15 MB.');
     }
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => typeof reader.result === 'string'
-        ? resolve(reader.result)
-        : reject(new Error('Unable to read the selected image.'));
-      reader.onerror = () => reject(new Error('Unable to read the selected image.'));
-      reader.readAsDataURL(file);
-    });
-    const res = await fetch('/api/certificate-assets/upload', {
-      method: 'POST',
-      headers: await getFreshAuthHeaders(),
-      body: JSON.stringify({ fileName: file.name, mimeType: file.type, base64 }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.success || !data.data?.filePath || !data.data?.fileUrl) {
-      throw new Error(data?.error || 'Unable to upload certificate image to private Supabase Storage.');
-    }
-    return data.data;
+    return directUpload(file, 'certificate-assets', true);
   },
 
   async delete(id: string): Promise<boolean> {
-    const res = await fetch(`/api/media/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/media/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -632,7 +608,7 @@ export const mediaApi = {
 
 export const settingsApi = {
   async getPublishedLandingCms(): Promise<LandingCmsConfig> {
-    const res = await fetch('/api/landing-cms/published', { cache: 'no-store' });
+    const res = await request('/api/landing-cms/published', { cache: 'no-store' });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.success || !data.config) {
       throw new Error(data?.error || 'Unable to load published landing page configuration.');
@@ -641,7 +617,7 @@ export const settingsApi = {
   },
 
   async getLandingCmsDraft(): Promise<LandingCmsConfig> {
-    const res = await fetch('/api/admin/landing-cms/draft', { headers: getAuthHeaders(), cache: 'no-store' });
+    const res = await request('/api/admin/landing-cms/draft', { headers: getAuthHeaders(), cache: 'no-store' });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.success || !data.config) {
       throw new Error(data?.error || 'Unable to load landing page draft.');
@@ -650,7 +626,7 @@ export const settingsApi = {
   },
 
   async saveLandingCmsDraft(config: LandingCmsConfig): Promise<LandingCmsConfig> {
-    const res = await fetch('/api/admin/landing-cms/draft', {
+    const res = await request('/api/admin/landing-cms/draft', {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(config),
@@ -663,7 +639,7 @@ export const settingsApi = {
   },
 
   async publishLandingCms(config: LandingCmsConfig): Promise<LandingCmsConfig> {
-    const res = await fetch('/api/admin/landing-cms/publish', {
+    const res = await request('/api/admin/landing-cms/publish', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(config),
@@ -682,26 +658,11 @@ export const settingsApi = {
     fileName: string;
     mimeType: string;
   }> {
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read selected file.'));
-      reader.onerror = () => reject(new Error('Unable to read selected file.'));
-      reader.readAsDataURL(file);
-    });
-    const res = await fetch('/api/admin/landing-cms/upload', {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ fileName: file.name, mimeType: file.type, base64, category }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.success || !data.fileUrl || !data.filePath) {
-      throw new Error(data?.error || 'Unable to upload landing page media.');
-    }
-    return data;
+    return directUpload(file, category);
   },
 
   async getLandingConfig(): Promise<any> {
-    const res = await fetch('/api/landing-config', {
+    const res = await request('/api/landing-config', {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -710,7 +671,7 @@ export const settingsApi = {
   },
 
   async saveLandingConfig(config: any): Promise<any> {
-    const res = await fetch('/api/landing-config', {
+    const res = await request('/api/landing-config', {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(config),
@@ -720,7 +681,7 @@ export const settingsApi = {
   },
 
   async getSidebarTheme(): Promise<SidebarTheme> {
-    const res = await fetch('/api/admin/sidebar-theme', {
+    const res = await request('/api/admin/sidebar-theme', {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -732,7 +693,7 @@ export const settingsApi = {
   },
 
   async saveSidebarTheme(theme: SidebarTheme): Promise<SidebarTheme> {
-    const res = await fetch('/api/admin/sidebar-theme', {
+    const res = await request('/api/admin/sidebar-theme', {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(theme),
@@ -745,7 +706,7 @@ export const settingsApi = {
   },
 
   async getRegistryFormSchema(): Promise<RegistryFormSchema> {
-    const res = await fetch('/api/admin/registry-form-schema', {
+    const res = await request('/api/admin/registry-form-schema', {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -754,7 +715,7 @@ export const settingsApi = {
   },
 
   async saveRegistryFormSchema(schema: RegistryFormSchema): Promise<RegistryFormSchema> {
-    const res = await fetch('/api/admin/registry-form-schema', {
+    const res = await request('/api/admin/registry-form-schema', {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(schema),

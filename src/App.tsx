@@ -273,6 +273,13 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (!sessionRestoreComplete || currentUser || currentPath === '/' || currentPath === '/login' || currentPath.startsWith('/superadmin')) return;
+    window.history.replaceState({}, '', '/login');
+    setCurrentPath('/login');
+    setIsAuthModalOpen(true);
+  }, [sessionRestoreComplete, currentUser, currentPath]);
+
   const refreshAccounts = useCallback(async () => {
     const isUserAdmin = currentUser?.role === 'super_admin' || currentUser?.role === 'admin';
     if (!isUserAdmin) {
@@ -328,6 +335,7 @@ export default function App() {
       setBarangays([]);
     }
 
+    if (!currentUser || !storageService.getSessionToken()) { setSwineList([]); setUnreadCount(0); return; }
     try {
       const { records } = await storageService.fetchSwineRecords();
       setSwineList(records);
@@ -593,7 +601,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    void authApi.logout();
+    void authApi.logout().catch(error => { console.error('Unable to end remote session:', error); });
     setCurrentRole('landing');
     setCurrentUser(null);
     storageService.setCurrentUser(null as any);

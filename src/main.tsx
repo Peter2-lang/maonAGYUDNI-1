@@ -1,6 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import { RequestFeedback } from './components/common/RequestFeedback';
 import { LanguageProvider } from './context/LanguageContext';
 import { OfflineProvider } from './context/OfflineContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -45,6 +46,7 @@ createRoot(document.getElementById('root')!).render(
       <LanguageProvider>
         <OfflineProvider>
           <App />
+          <RequestFeedback />
         </OfflineProvider>
       </LanguageProvider>
     </ErrorBoundary>

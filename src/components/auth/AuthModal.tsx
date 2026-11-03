@@ -1,3 +1,4 @@
+import { request } from '../../services/http';
 import React, { useState, useEffect } from 'react';
 import {
   Lock,
@@ -40,7 +41,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const checkConnection = async () => {
       try {
-        const response = await fetch('/api/health');
+        const response = await request('/api/health');
         const health = await response.json();
         if (!response.ok || health.database !== 'connected') throw new Error('Database unavailable');
 

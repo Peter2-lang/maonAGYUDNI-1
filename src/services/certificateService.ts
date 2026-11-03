@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient';
+import { supabase } from '../lib/supabase';
 import { CertificateLogoSettings } from '../components/certificate/CertificateLogoCustomizer';
 import { CertificateData } from '../components/certificate/BarangayCertificateView';
 
@@ -45,6 +45,7 @@ export function mapDbToLogoSettings(row: any, fallbackBrgy: string): Certificate
 
 export const certificateService = {
   async getLogoSettings(barangayName: string): Promise<CertificateLogoSettings> {
+    if (!supabase) return mapDbToLogoSettings(null, barangayName);
     const { data, error } = await supabase
       .from('certificate_logo_settings')
       .select('*')
@@ -58,6 +59,7 @@ export const certificateService = {
   },
 
   async saveLogoSettings(barangayName: string, settings: CertificateLogoSettings): Promise<void> {
+    if (!supabase) throw new Error('Supabase is not configured.');
     const payload = {
       barangay_name: barangayName.toUpperCase().trim(),
       left_logo_type: settings.leftLogoType,
@@ -89,6 +91,7 @@ export const certificateService = {
   },
 
   async issueCertificate(data: CertificateData, settings: CertificateLogoSettings): Promise<string> {
+    if (!supabase) throw new Error('Supabase is not configured.');
     const certNumber = data.certificateNo || `CERT-${Date.now().toString().slice(-6)}`;
 
     const { data: record, error } = await supabase

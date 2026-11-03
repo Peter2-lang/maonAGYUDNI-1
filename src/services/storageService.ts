@@ -1,3 +1,5 @@
+import { getSessionScope, setSessionScope } from './sessionScope';
+import { request } from './http';
 import {
   INITIAL_ACCOUNTS,
   INITIAL_BARANGAYS,
@@ -76,10 +78,18 @@ const STORAGE_KEYS = {
 let currentAuthUser: UserAccount | null = null;
 let currentAuthToken: string | null = null;
 
+const PRIVATE_STORAGE_KEYS = new Set<string>([
+  STORAGE_KEYS.SWINE, STORAGE_KEYS.ACCOUNTS, STORAGE_KEYS.MESSAGES, STORAGE_KEYS.CERT_ISSUED,
+  STORAGE_KEYS.CERT_TEMPLATES, STORAGE_KEYS.TRANSMITTAL_LETTERS, STORAGE_KEYS.OFFLINE_QUEUE,
+  STORAGE_KEYS.BIOSECURITY_AUDITS, STORAGE_KEYS.BIOSECURITY_INCIDENTS, STORAGE_KEYS.MARKETING_ALERTS,
+  STORAGE_KEYS.TAKEOFF_RECORDS, STORAGE_KEYS.LEGAL_IMPORT_HISTORY,
+]);
+const scopedStorageKey = (key: string) => PRIVATE_STORAGE_KEYS.has(key) ? `${key}:${getSessionScope()}` : key;
+
 // Safe LocalStorage helpers
 function getItem<T>(key: string, defaultValue: T): T {
   try {
-    const item = localStorage.getItem(key);
+    const item = localStorage.getItem(scopedStorageKey(key));
     if (!item) return defaultValue;
     return JSON.parse(item) as T;
   } catch (err) {
@@ -90,7 +100,7 @@ function getItem<T>(key: string, defaultValue: T): T {
 
 function setItem<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(scopedStorageKey(key), JSON.stringify(value));
   } catch (err) {
     console.error(`Error writing localStorage key "${key}":`, err);
   }
@@ -238,23 +248,18 @@ export const storageService = {
       const user = this.getCurrentUser();
 
       if (user) {
-        headers['x-user-role'] = user.role || 'focal';
-        headers['x-user-id'] = user.id || '';
-        headers['x-user-name'] = user.username || user.name || '';
 
         if (user.assignedBarangay) {
-          headers['x-user-assigned-barangay'] = user.assignedBarangay;
         }
 
         if (user.barangay_id) {
-          headers['x-user-barangay-id'] = user.barangay_id;
         }
       }
 
       const queryString = searchParams.toString();
       const endpoint = `/api/swine-records${queryString ? `?${queryString}` : ''}`;
 
-      const res = await fetch(endpoint, {
+      const res = await request(endpoint, {
         method: 'GET',
         headers,
       });
@@ -349,6 +354,7 @@ export const storageService = {
       farmScale,
       asfZone,
       farmerContact: contactDigits ? normalizePhilippinePhoneNumber(contactDigits) : '',
+      expectedUpdatedAt: record.expectedUpdatedAt || record.updatedAt,
       updatedAt: new Date().toISOString(),
     };
 
@@ -358,17 +364,12 @@ export const storageService = {
       const user = this.getCurrentUser();
       const headers: Record<string, string> = { 'Content-Type': 'application/json', ...getSessionAuthorizationHeader() };
       if (user) {
-        headers['x-user-role'] = user.role || 'focal';
-        headers['x-user-id'] = user.id || '';
-        headers['x-user-name'] = user.username || user.name || '';
-        if (user.assignedBarangay) headers['x-user-assigned-barangay'] = user.assignedBarangay;
-        if (user.barangay_id) headers['x-user-barangay-id'] = user.barangay_id;
       }
 
       const endpoint = isEdit ? `/api/swine/${encodeURIComponent(fullRecord.id)}` : '/api/swine';
       const method = isEdit ? 'PUT' : 'POST';
 
-      const sendRecord = (farmerContact: string) => fetch(endpoint, {
+      const sendRecord = (farmerContact: string) => request(endpoint, {
         method,
         headers,
         body: JSON.stringify({ ...fullRecord, farmerContact }),
@@ -465,7 +466,7 @@ export const storageService = {
   async deleteSwineRecordCloud(id: string): Promise<boolean> {
     const isOffline = this.isEffectiveOffline();
     if (!isOffline && typeof fetch !== 'undefined') {
-      const res = await fetch(`/api/swine/${encodeURIComponent(id)}`, {
+      const res = await request(`/api/swine/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: {
           ...getSessionAuthorizationHeader(),
@@ -508,7 +509,7 @@ export const storageService = {
     if (!ids || ids.length === 0) return true;
     const isOffline = this.isEffectiveOffline();
     if (!isOffline && typeof fetch !== 'undefined') {
-      const res = await fetch('/api/swine/bulk-delete', {
+      const res = await request('/api/swine/bulk-delete', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -568,7 +569,7 @@ export const storageService = {
         });
       });
     } else {
-      fetch('/api/swine/bulk-delete', {
+      request('/api/swine/bulk-delete', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -767,6 +768,7 @@ export const storageService = {
     if (user && previousUser?.id !== user.id && !preserveSessionToken) {
       currentAuthToken = null;
     }
+    setSessionScope(user?.authUserId || user?.id || null);
     currentAuthUser = user;
     if (!user) currentAuthToken = null;
   },
@@ -984,13 +986,10 @@ export const storageService = {
 
     // Sync deletion with Express backend
     try {
-      fetch(`/api/certificates/${encodeURIComponent(certNo)}`, {
+      request(`/api/certificates/${encodeURIComponent(certNo)}`, {
         method: 'DELETE',
         headers: {
           ...getSessionAuthorizationHeader(),
-          'x-user-role': user?.role || 'admin',
-          'x-user-barangay-id': user?.barangay_id || '',
-          'x-user-barangay-name': user?.assignedBarangay || '',
         },
       }).catch(err => console.warn('Backend API certificate delete sync warning:', err));
     } catch {
@@ -1014,14 +1013,11 @@ export const storageService = {
 
     // Sync issuance with Express backend
     try {
-      fetch('/api/certificates', {
+      request('/api/certificates', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getSessionAuthorizationHeader(),
-          'x-user-role': user?.role || 'focal',
-          'x-user-barangay-id': user?.barangay_id || '',
-          'x-user-barangay-name': user?.assignedBarangay || '',
         },
         body: JSON.stringify(cert),
       }).catch(err => console.warn('Backend API certificate issue sync warning:', err));
@@ -1045,11 +1041,8 @@ export const storageService = {
       const headers: Record<string, string> = {
         ...getSessionAuthorizationHeader(),
       };
-      if (user?.role) headers['x-user-role'] = user.role;
-      if (user?.barangay_id) headers['x-user-barangay-id'] = user.barangay_id;
-      if (user?.assignedBarangay) headers['x-user-barangay-name'] = user.assignedBarangay;
 
-      const res = await fetch('/api/certificates', { headers });
+      const res = await request('/api/certificates', { headers });
       if (res.ok) {
         const json = await res.json();
         if (json?.success && Array.isArray(json.data)) {
@@ -1077,11 +1070,8 @@ export const storageService = {
       const headers: Record<string, string> = {
         ...getSessionAuthorizationHeader(),
       };
-      if (user?.role) headers['x-user-role'] = user.role;
-      if (user?.barangay_id) headers['x-user-barangay-id'] = user.barangay_id;
-      if (user?.assignedBarangay) headers['x-user-barangay-name'] = user.assignedBarangay;
 
-      const res = await fetch(`/api/reports/official?${query.toString()}`, { headers });
+      const res = await request(`/api/reports/official?${query.toString()}`, { headers });
       if (res.ok) {
         const json = await res.json();
         if (json?.success && Array.isArray(json.data)) {
@@ -1215,12 +1205,10 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
 
     // Sync with backend Express API
     try {
-      fetch('/api/landing/settings', {
+      request('/api/landing/settings', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-role': user?.role || 'admin',
-          'x-user-name': user?.name || 'Administrator',
         },
         body: JSON.stringify(config),
       }).catch(err => console.warn('Landing config backend sync warning:', err));
@@ -1231,7 +1219,7 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
 
   async fetchLandingConfigFromApi(): Promise<LandingPageConfig> {
     try {
-      const res = await fetch('/api/landing/settings');
+      const res = await request('/api/landing/settings');
       if (res.ok) {
         const json = await res.json();
         if (json?.success && json.data) {
@@ -1471,7 +1459,7 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
   // African Swine Fever (ASF) Regulations & Executive Orders / Legal Decrees
   getAsfRegulations(): ASFRegulatoryDocument[] {
     const stored = getItem<ASFRegulatoryDocument[] | null>(STORAGE_KEYS.ASF_REGULATIONS, null);
-    if (!stored || stored.length === 0 || !stored.some(d => d.id === 'mo-hinunangan-2025-59' && d.articles && d.articles.length >= 10)) {
+    if (!stored) {
       setItem(STORAGE_KEYS.ASF_REGULATIONS, ALL_ASF_REGULATIONS);
       return ALL_ASF_REGULATIONS;
     }
@@ -1500,7 +1488,7 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
     setItem(STORAGE_KEYS.ASF_REGULATIONS, deduplicated);
   },
 
-  updateAsfRegulation(doc: ASFRegulatoryDocument, performedBy?: string, changeSummary?: string): void {
+  async updateAsfRegulation(doc: ASFRegulatoryDocument, performedBy?: string, changeSummary?: string): Promise<void> {
     const list = this.getAsfRegulations();
     const idx = list.findIndex(d => d.id === doc.id);
     
@@ -1537,25 +1525,12 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
     } else {
       list.push(updatedDoc);
     }
-    this.saveAsfRegulations(list);
 
-    // Sync update to Express backend API
-    try {
-      fetch(`/api/legal-documents/${encodeURIComponent(updatedDoc.id)}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-role': 'admin',
-          'x-user-name': performedBy || 'System Admin',
-        },
-        body: JSON.stringify(updatedDoc),
-      }).catch(err => console.warn('Legal document API update warning:', err));
-    } catch {
-      // offline fallback
-    }
+    await this.writeLegalDocument(`/api/legal-documents/${encodeURIComponent(updatedDoc.id)}`, 'PUT', updatedDoc);
+    this.saveAsfRegulations(list);
   },
 
-  addAsfRegulation(doc: ASFRegulatoryDocument, performedBy?: string): void {
+  async addAsfRegulation(doc: ASFRegulatoryDocument, performedBy?: string): Promise<void> {
     const list = this.getAsfRegulations();
     const existingIndex = list.findIndex(d => d.id === doc.id);
     const newDoc: ASFRegulatoryDocument = {
@@ -1585,25 +1560,12 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
     } else {
       list.unshift(newDoc);
     }
-    this.saveAsfRegulations(list);
 
-    // Sync create to Express backend API
-    try {
-      fetch('/api/legal-documents', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-role': 'admin',
-          'x-user-name': performedBy || 'System Admin',
-        },
-        body: JSON.stringify(newDoc),
-      }).catch(err => console.warn('Legal document API create warning:', err));
-    } catch {
-      // offline fallback
-    }
+    await this.writeLegalDocument('/api/legal-documents', 'POST', newDoc);
+    this.saveAsfRegulations(list);
   },
 
-  archiveAsfRegulation(id: string, performedBy?: string): void {
+  async archiveAsfRegulation(id: string, performedBy?: string): Promise<void> {
     const list = this.getAsfRegulations();
     const idx = list.findIndex(d => d.id === id);
     if (idx >= 0) {
@@ -1622,25 +1584,13 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
           ...(list[idx].auditLogs || []),
         ],
       };
+  
+      await this.writeLegalDocument(`/api/legal-documents/${encodeURIComponent(id)}`, 'PUT', list[idx]);
       this.saveAsfRegulations(list);
-
-      try {
-        fetch(`/api/legal-documents/${encodeURIComponent(id)}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-role': 'admin',
-            'x-user-name': performedBy || 'System Admin',
-          },
-          body: JSON.stringify(list[idx]),
-        }).catch(err => console.warn('Legal document API archive warning:', err));
-      } catch {
-        // offline fallback
-      }
     }
   },
 
-  restoreAsfRegulation(id: string, performedBy?: string): void {
+  async restoreAsfRegulation(id: string, performedBy?: string): Promise<void> {
     const list = this.getAsfRegulations();
     const idx = list.findIndex(d => d.id === id);
     if (idx >= 0) {
@@ -1659,55 +1609,37 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
           ...(list[idx].auditLogs || []),
         ],
       };
+  
+      await this.writeLegalDocument(`/api/legal-documents/${encodeURIComponent(id)}`, 'PUT', list[idx]);
       this.saveAsfRegulations(list);
-
-      try {
-        fetch(`/api/legal-documents/${encodeURIComponent(id)}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-role': 'admin',
-            'x-user-name': performedBy || 'System Admin',
-          },
-          body: JSON.stringify(list[idx]),
-        }).catch(err => console.warn('Legal document API restore warning:', err));
-      } catch {
-        // offline fallback
-      }
     }
   },
 
-  deleteAsfRegulation(id: string, performedBy?: string): void {
+  async deleteAsfRegulation(id: string, performedBy?: string): Promise<void> {
     const list = this.getAsfRegulations().filter(d => d.id !== id);
-    this.saveAsfRegulations(list);
 
-    try {
-      fetch(`/api/legal-documents/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: {
-          'x-user-role': 'admin',
-          'x-user-name': performedBy || 'System Admin',
-        },
-      }).catch(err => console.warn('Legal document API delete warning:', err));
-    } catch {
-      // offline fallback
-    }
+    await this.writeLegalDocument(`/api/legal-documents/${encodeURIComponent(id)}`, 'DELETE');
+    this.saveAsfRegulations(list);
+  },
+
+  async writeLegalDocument(path: string, method: string, document?: ASFRegulatoryDocument): Promise<void> {
+    if (!navigator.onLine) return;
+    const res = await request(path, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...getSessionAuthorizationHeader() },
+      body: document ? JSON.stringify(document) : undefined,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) throw new Error(json?.error || `Legal document request failed (HTTP ${res.status}).`);
   },
 
   async fetchAsfRegulationsFromApi(): Promise<ASFRegulatoryDocument[]> {
-    try {
-      const res = await fetch('/api/legal-documents');
-      if (res.ok) {
-        const json = await res.json();
-        if (json?.success && Array.isArray(json.data) && json.data.length > 0) {
-          setItem(STORAGE_KEYS.ASF_REGULATIONS, json.data);
-          return json.data;
-        }
-      }
-    } catch (err) {
-      console.warn('API legal regulations fetch warning, using local cache:', err);
-    }
-    return this.getAsfRegulations();
+    if (!navigator.onLine) return this.getAsfRegulations();
+    const res = await request('/api/legal-documents');
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success || !Array.isArray(json.data)) throw new Error(json?.error || `Unable to load legal documents (HTTP ${res.status}).`);
+    setItem(STORAGE_KEYS.ASF_REGULATIONS, json.data);
+    return json.data;
   },
 
   resetAsfRegulations(): ASFRegulatoryDocument[] {
@@ -1949,7 +1881,7 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
       isPublished: true,
       lastUpdated: new Date().toISOString(),
     };
-    const response = await fetch('/api/registry-schema', {
+    const response = await request('/api/registry-schema', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getSessionAuthorizationHeader() },
       body: JSON.stringify(published),
@@ -1966,7 +1898,7 @@ Prepared for regional trade accreditation and ASF Green Zone maintenance.`,
   },
 
   async refreshRegistryFormSchemaFromCloud(): Promise<RegistryFormSchema> {
-    const response = await fetch('/api/registry-schema', {
+    const response = await request('/api/registry-schema', {
       headers: getSessionAuthorizationHeader(),
     });
     const result = await response.json().catch(() => null);

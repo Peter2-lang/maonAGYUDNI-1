@@ -566,7 +566,7 @@ export function mapSwineToDb(s: any) {
     'biosecurityWarning', 'biosecurity_warning', 'status', 'readyToSell', 'ready_to_sell',
     'priceEstimate', 'price_estimate', 'estimatedPricePhp', 'photoUrl', 'photo_url',
     'isArchived', 'is_archived', 'registeredAt', 'registered_at', 'registeredBy', 'registered_by',
-    'createdAt', 'created_at', 'updatedAt', 'updated_at', 'customFields', 'custom_fields',
+    'expectedUpdatedAt', 'createdAt', 'created_at', 'updatedAt', 'updated_at', 'customFields', 'custom_fields',
     'biosecurity', 'notes', 'breed', 'gender', 'latitude', 'longitude', 'penCapacity',
     'rsbsaId', 'registry_id', 'isSynced', 'age', 'setbackCompliant', 'distanceToWaterSourceMeters',
     'distanceToTourismSchoolMeters', 'distanceToBuiltUpMeters'
@@ -1037,6 +1037,12 @@ export async function upsertSwineRecord(
   try {
     const dbRecord = mapSwineToDb(record);
     const saved = await db.transaction(async tx => {
+      if (record.expectedUpdatedAt) {
+        const [current] = await tx.select({ updatedAt: swineRecords.updatedAt }).from(swineRecords).where(eq(swineRecords.id, dbRecord.id)).for('update');
+        if (!current || new Date(current.updatedAt).getTime() !== new Date(record.expectedUpdatedAt).getTime()) {
+          throw new Error('Conflict: this record changed on the server. Refresh it before saving your changes.');
+        }
+      }
       const [barangay] = await tx
         .select({ id: barangays.id })
         .from(barangays)
@@ -1127,12 +1133,13 @@ export async function upsertSwineRecord(
     const result =
       await tx
         .insert(swineRecords)
-        .values({ ...dbRecord, farmerId })
+        .values({ ...dbRecord, farmerId, updatedAt: new Date() })
         .onConflictDoUpdate({
           target:
             swineRecords.id,
 
           set: {
+            updatedAt: new Date(),
             computedPigId:
               dbRecord.computedPigId,
 

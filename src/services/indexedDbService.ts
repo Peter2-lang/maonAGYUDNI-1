@@ -1,3 +1,4 @@
+import { getSessionScope } from './sessionScope';
 /**
  * Native IndexedDB Service for DA Hinunangan Swine Registry
  * Complete Offline-First storage layer with structured stores and indexing.
@@ -47,6 +48,7 @@ export interface OfflineSyncMetadata {
 }
 
 class IndexedDbService {
+  private databaseScope = '';
   private dbPromise: Promise<IDBDatabase> | null = null;
 
   private async getDB(): Promise<IDBDatabase> {
@@ -54,12 +56,18 @@ class IndexedDbService {
       throw new Error('IndexedDB is not supported in this environment.');
     }
 
+    const scope = getSessionScope();
+    if (this.databaseScope !== scope) {
+      this.dbPromise?.then(db => db.close()).catch(() => {});
+      this.dbPromise = null;
+      this.databaseScope = scope;
+    }
     if (this.dbPromise) {
       return this.dbPromise;
     }
 
     this.dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = indexedDB.open(`${DB_NAME}_${scope}`, DB_VERSION);
 
       request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
         const db = (event.target as IDBOpenDBRequest).result;

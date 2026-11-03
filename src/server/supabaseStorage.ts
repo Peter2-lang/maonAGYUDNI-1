@@ -19,7 +19,7 @@ const IMAGE_CONTENT_TYPES: Record<string, { extensions: string[]; matches: (file
   'image/gif': { extensions: ['gif'], matches: file => ['GIF87a', 'GIF89a'].includes(file.toString('ascii', 0, 6)) },
 };
 
-function decodeImage(fileName: string, mimeType: string, base64Payload: string): Buffer {
+export function decodeImage(fileName: string, mimeType: string, base64Payload: string): Buffer {
   const match = base64Payload.match(/^data:([^;]+);base64,([A-Za-z0-9+/=\r\n]+)$/s);
   if (!match || match[1].toLowerCase() !== mimeType.toLowerCase()) {
     throw new Error('The image payload is malformed or its declared MIME type does not match.');

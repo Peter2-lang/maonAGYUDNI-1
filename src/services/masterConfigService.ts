@@ -1,3 +1,5 @@
+import { storageService } from './storageService';
+import { request } from './http';
 import {
   MasterSystemConfig,
   RoleVisualConfig,
@@ -62,7 +64,7 @@ class MasterConfigService {
       const raw = localStorage.getItem(key);
       if (raw) {
         const parsed = JSON.parse(raw);
-        return { ...fallback, ...parsed };
+        return Array.isArray(fallback) ? parsed : { ...fallback, ...parsed };
       }
     } catch (e) {
       console.warn(`Error loading ${key} from storage:`, e);
@@ -81,7 +83,8 @@ class MasterConfigService {
 
   public async syncWithBackend(): Promise<void> {
     try {
-      const res = await fetch('/api/config/master');
+      if (!storageService.getSessionToken()) return;
+      const res = await request('/api/config/master');
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.config) {
@@ -124,7 +127,7 @@ class MasterConfigService {
     this.saveToStorage(STORAGE_KEY_DRAFT, this.memoryDraft);
 
     // Sync draft with backend non-blockingly
-    fetch('/api/config/master/draft', {
+    request('/api/config/master/draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ draft }),
@@ -146,6 +149,13 @@ class MasterConfigService {
       updatedAt: now,
       updatedBy,
     };
+
+    const response = await request('/api/config/master/publish', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: published, summary, updatedBy }),
+    });
+    const confirmed = await response.json();
+    if (confirmed.config) Object.assign(published, confirmed.config);
 
     // Record audit log
     const auditEntry: ConfigAuditLogEntry = {
@@ -181,24 +191,6 @@ class MasterConfigService {
     // Reset draft to match published
     this.memoryDraft = { ...published };
     this.saveToStorage(STORAGE_KEY_DRAFT, this.memoryDraft);
-
-    // Post to backend
-    try {
-      await fetch('/api/config/master/publish', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-role': 'super_admin',
-        },
-        body: JSON.stringify({
-          config: published,
-          summary,
-          updatedBy,
-        }),
-      });
-    } catch (e) {
-      console.warn('Backend sync failed, stored in browser:', e);
-    }
 
     this.notifyConfigUpdated();
     return this.memoryPublished;
@@ -282,6 +274,10 @@ class MasterConfigService {
     const targetVersion = this.memoryVersions.find(v => v.version === versionNum);
     if (!targetVersion || !targetVersion.snapshot) return null;
 
+    await request(`/api/config/master/restore/${versionNum}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    });
+
     const restoredSnapshot = JSON.parse(JSON.stringify(targetVersion.snapshot));
     const nextVersion = (this.memoryPublished.version || 1) + 1;
     const now = new Date().toISOString();
@@ -314,14 +310,6 @@ class MasterConfigService {
     this.memoryVersions.unshift(newVersionEntry);
     this.saveToStorage(STORAGE_KEY_VERSIONS, this.memoryVersions);
 
-    // Call API restore
-    try {
-      await fetch(`/api/config/master/restore/${versionNum}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-role': 'super_admin' },
-      });
-    } catch {}
-
     this.notifyConfigUpdated();
     return this.memoryPublished;
   }
@@ -340,7 +328,7 @@ class MasterConfigService {
     this.saveToStorage(STORAGE_KEY_AUDIT_LOGS, this.memoryAuditLogs);
 
     // Push to backend
-    fetch('/api/config/master/audit-log', {
+    request('/api/config/master/audit-log', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fullEntry),

@@ -1,3 +1,4 @@
+import { request } from '../../services/http';
 import React, { useState, useEffect } from 'react';
 import {
   History,
@@ -47,6 +48,7 @@ export const LegalImportHistoryModal: React.FC<LegalImportHistoryModalProps> = (
   const [history, setHistory] = useState<LegalImportHistoryRecord[]>(() =>
     storageService.getLegalImportHistory()
   );
+  const [auditError, setAuditError] = useState('');
   const [auditLogs, setAuditLogs] = useState<LegalAuditLog[]>([]);
   const [isLoadingAuditLogs, setIsLoadingAuditLogs] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,16 +59,21 @@ export const LegalImportHistoryModal: React.FC<LegalImportHistoryModalProps> = (
     if (!isOpen) return;
     setHistory(storageService.getLegalImportHistory());
 
+    setAuditError('');
     setIsLoadingAuditLogs(true);
-    fetch('/api/legal-documents/audit-logs')
-      .then(res => res.json())
+    request('/api/legal-documents/audit-logs', { headers: { Authorization: `Bearer ${storageService.getSessionToken() || ''}` } })
+      .then(async res => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) throw new Error(data?.error || 'Unable to load audit history.');
+        return data;
+      })
       .then(resData => {
         if (resData?.success && Array.isArray(resData.data)) {
           setAuditLogs(resData.data);
         }
       })
       .catch(err => {
-        console.warn('Could not fetch audit logs:', err);
+        setAuditError(err instanceof Error ? err.message : 'Unable to load audit history.');
       })
       .finally(() => {
         setIsLoadingAuditLogs(false);
@@ -157,6 +164,7 @@ export const LegalImportHistoryModal: React.FC<LegalImportHistoryModalProps> = (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm">
+      {auditError && <p role="alert" className="bg-red-100 p-3 text-red-800">{auditError}</p>}
       <div className="flex max-h-[88vh] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
         
         {/* Header */}

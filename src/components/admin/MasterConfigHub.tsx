@@ -307,9 +307,11 @@ export const MasterConfigHub: React.FC<MasterConfigHubProps> = ({
   };
 
   const handlePublish = async () => {
-    await masterConfigService.publishConfig('Super Admin', publishSummary);
-    setIsPublishModalOpen(false);
-    if (onRefresh) onRefresh();
+    try {
+      await masterConfigService.publishConfig('Super Admin', publishSummary);
+      setIsPublishModalOpen(false);
+      if (onRefresh) onRefresh();
+    } catch { /* Shared request feedback displays the failure. */ }
   };
 
   const handleDiscard = () => {
@@ -329,7 +331,7 @@ export const MasterConfigHub: React.FC<MasterConfigHubProps> = ({
 
   const handleRestoreVersion = async (vNum: number) => {
     if (window.confirm(`Are you sure you want to rollback the entire system to Version v${vNum}?`)) {
-      await masterConfigService.restoreVersion(vNum, 'Super Admin');
+      await masterConfigService.restoreVersion(vNum, 'Super Admin').catch(() => null);
       setDraftConfig(masterConfigService.getDraftConfig());
       setPublishedConfig(masterConfigService.getConfig());
       if (onRefresh) onRefresh();

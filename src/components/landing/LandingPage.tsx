@@ -108,7 +108,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   // Legal Ordinances Modal & Search State
   const [selectedOrdinance, setSelectedOrdinance] = useState<ASFRegulatoryDocument | null>(null);
   const [legalDocSearch, setLegalDocSearch] = useState('');
-  const allLegalDocuments = storageService.getAsfRegulations();
+  const [allLegalDocuments, setAllLegalDocuments] = useState(() => storageService.getAsfRegulations());
+  useEffect(() => {
+    let active = true;
+    storageService.fetchAsfRegulationsFromApi().then(docs => { if (active) setAllLegalDocuments(docs); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const legalLandingConfig = cmsConfig.legalDocumentsConfig || DEFAULT_LEGAL_DOCUMENTS_CONFIG;
 

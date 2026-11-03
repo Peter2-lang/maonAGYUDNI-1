@@ -1,3 +1,4 @@
+import { request } from './http';
 import { SwineRecord } from '../types.ts';
 import { storageService } from './storageService.ts';
 
@@ -37,14 +38,9 @@ function getAuthHeaders(): Record<string, string> {
     const token = storageService.getSessionToken();
     if (token) headers.Authorization = `Bearer ${token}`;
     if (user) {
-      headers['x-user-role'] = user.role || 'focal';
-      headers['x-user-id'] = user.id || '';
-      headers['x-user-name'] = user.username || user.name || '';
       if (user.assignedBarangay) {
-        headers['x-user-assigned-barangay'] = user.assignedBarangay;
       }
       if (user.barangay_id) {
-        headers['x-user-barangay-id'] = user.barangay_id;
       }
     }
   } catch {
@@ -85,7 +81,7 @@ export const swineApi = {
     const queryString = searchParams.toString();
     const endpoint = `/api/swine-records${queryString ? `?${queryString}` : ''}`;
 
-    const res = await fetch(endpoint, {
+    const res = await request(endpoint, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -111,7 +107,7 @@ export const swineApi = {
    * Fetch a single swine record by database ID or Tag ID.
    */
   async getById(id: string): Promise<SwineRecord> {
-    const res = await fetch(`/api/swine-records/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/swine-records/${encodeURIComponent(id)}`, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -133,7 +129,7 @@ export const swineApi = {
    * Save a newly created swine record directly to the database.
    */
   async create(record: Partial<SwineRecord>): Promise<SwineRecord> {
-    const res = await fetch('/api/swine-records', {
+    const res = await request('/api/swine-records', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(record),
@@ -151,7 +147,7 @@ export const swineApi = {
    * Update an existing swine record in the database.
    */
   async update(id: string, record: Partial<SwineRecord>): Promise<SwineRecord> {
-    const res = await fetch(`/api/swine-records/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/swine-records/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(record),
@@ -169,7 +165,7 @@ export const swineApi = {
    * Delete a swine record from the database.
    */
   async delete(id: string): Promise<boolean> {
-    const res = await fetch(`/api/swine-records/${encodeURIComponent(id)}`, {
+    const res = await request(`/api/swine-records/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -186,7 +182,7 @@ export const swineApi = {
    * Bulk delete swine records from the database.
    */
   async bulkDelete(ids: string[]): Promise<number> {
-    const res = await fetch('/api/swine-records/bulk-delete', {
+    const res = await request('/api/swine-records/bulk-delete', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ ids }),
@@ -205,7 +201,7 @@ export const swineApi = {
    * Update sell status in the database.
    */
   async toggleSell(id: string, readyToSell: boolean, priceEstimate?: number): Promise<SwineRecord> {
-    const res = await fetch(`/api/swine-records/${encodeURIComponent(id)}/sell`, {
+    const res = await request(`/api/swine-records/${encodeURIComponent(id)}/sell`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ readyToSell, priceEstimate }),

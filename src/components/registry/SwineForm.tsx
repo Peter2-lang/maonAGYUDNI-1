@@ -1,3 +1,4 @@
+import { request } from '../../services/http';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Upload,
@@ -2493,7 +2494,7 @@ export const SwineForm: React.FC<SwineFormProps> = ({
           recordPigIdTag = generateNextPigIdTag(existingRecords);
         } else {
           const token = storageService.getSessionToken();
-          const response = await fetch('/api/swine-records/next-id', {
+          const response = await request('/api/swine-records/next-id', {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           });
           if (!response.ok) {

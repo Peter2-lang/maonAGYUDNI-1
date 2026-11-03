@@ -68,6 +68,7 @@ export const swineRecords = pgTable('swine_records', {
   registeredAt: text('registered_at').notNull(),
   customFields: jsonb('custom_fields'),
   createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const issuedCertificates = pgTable('issued_certificates', {

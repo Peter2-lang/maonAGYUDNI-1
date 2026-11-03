@@ -1,3 +1,4 @@
+import { request } from '../../services/http';
 import React, { useState } from 'react';
 import {
   Server,
@@ -55,7 +56,7 @@ export const ApiConfiguration: React.FC = () => {
     setIsPinging(true);
     const start = performance.now();
     try {
-      const res = await fetch('/api/settings?key=system_branding');
+      const res = await request('/api/settings?key=system_branding');
       const latency = Math.round(performance.now() - start);
       if (res.ok) {
         setPingStatus({

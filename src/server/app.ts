@@ -1,3 +1,5 @@
+import { claimSyncOperation, finishSyncOperation } from '../db/syncOperations.ts';
+import { registerDirectUploads } from './directUploads.ts';
 import express from 'express';
 import { createHash } from 'node:crypto';
 import { HINUNANGAN_BARANGAYS } from '../data/barangays.ts';
@@ -135,30 +137,22 @@ export function createApp() {
     console.warn('PostgreSQL table check notice:', err?.message || err);
   });
 
-  app.use(express.json({ limit: '30mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '30mb' }));
+  app.use(express.json({ limit: '4mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '4mb' }));
 
   app.use(async (req, res, next) => {
-    const requiresSession =
-      /^\/api\/(?:swine(?:-records)?|sync|registry-schema|module-data|accounts|certificates|reports)(?:\/|$)/.test(req.path) ||
-      /^\/api\/auth\/(?:profile|superadmin-profile)$/.test(req.path) ||
-      /^\/api\/admin\/registry-form-schema(?:\/|$)/.test(req.path) ||
-      ((req.path === '/api/barangays' || req.path.startsWith('/api/barangays/')) && req.method !== 'GET');
-    if (!requiresSession) return next();
-    // Only check routes starting with /api/ or /health
-    if (!req.path.startsWith('/api/') && req.path !== '/health') {
-      return next();
-    }
+    if (!req.path.startsWith('/api/')) return next();
+    res.set('Cache-Control', 'no-store');
 
     // Explicitly allowed public routes that do NOT require an active session
     const isPublicRoute =
       req.path === '/health' ||
       req.path === '/api/health' ||
-      req.path === '/api/auth/login' ||
+      (req.method === 'POST' && ['/api/auth/login', '/api/auth/superadmin-login'].includes(req.path)) ||
       req.path === '/api/landing-cms/published' ||
       (req.path === '/api/landing-config' && req.method === 'GET') ||
       (req.path === '/api/landing/settings' && req.method === 'GET') ||
-      req.path === '/api/legal-documents' ||
+      (req.path === '/api/legal-documents' && req.method === 'GET') ||
       req.path === '/api/public/assistant/chat' ||
       (req.path === '/api/barangays' && req.method === 'GET');
 
@@ -194,6 +188,7 @@ export function createApp() {
         });
       }
 
+      if (!await initPostgresTables()) return res.status(503).json({ success: false, error: 'Database initialization is unavailable.' });
       const profile = await getUserByAuthUserId(data.user.id);
       if (!profile || profile.active !== true || profile.isActive !== true || profile.status !== 'active') {
         if (isPublicRoute) return next();
@@ -230,6 +225,13 @@ export function createApp() {
         status: profile.status,
       });
 
+      const context = getUserSecurityContext(req);
+      if (((req.path.startsWith('/api/admin/') && req.path !== '/api/admin/registry-form-schema') || req.path.startsWith('/api/config/')) && req.method !== 'GET' && !context.isSuperAdmin) {
+        return res.status(403).json({ success: false, error: 'Super administrator access required.' });
+      }
+      if ((req.path.startsWith('/api/legal-documents') || req.path.startsWith('/api/config/master/')) && !context.isAdmin) {
+        return res.status(403).json({ success: false, error: 'Administrator access required.' });
+      }
       return next();
     } catch (error) {
       if (isPublicRoute) return next();
@@ -241,6 +243,8 @@ export function createApp() {
       return res.status(503).json({ success: false, error: 'Unable to validate Supabase Auth session.' });
     }
   });
+
+  registerDirectUploads(app, getUserSecurityContext);
 
   app.get(['/health', '/api/health'], async (_req, res) => {
     let dbStatus = 'disconnected';
@@ -313,7 +317,7 @@ export function createApp() {
       database_project_ref: getConfiguredDatabaseProjectRef(),
       ...(databaseErrorCode ? { database_error_code: databaseErrorCode } : {}),
       ...(databaseErrorKind ? { database_error_kind: databaseErrorKind } : {}),
-      swine_records_count: recordsCount,
+      // Record counts are available only through the authenticated dashboard.
       timestamp: new Date().toISOString(),
     });
   });
@@ -1065,6 +1069,24 @@ export function createApp() {
       if (confirmed === null) throw new Error('Database did not return the saved module data.');
       return res.json({ success: true, data: confirmed ?? saved       });
 
+
+    } catch (error) {
+      const failure = formatCertificateTemplateDatabaseError(error);
+      console.error('[module-data] save failed', {
+        key: req.params.key,
+        code: failure.code,
+        detail: error instanceof Error ? error.message.slice(0, 500) : 'Unknown database error',
+      });
+      return res.status(failure.code === '403' ? 403 : failure.code === '409' ? 409 : 500).json({
+        success: false,
+        error: req.params.key === 'certificate_templates'
+          ? `Unable to save certificate templates. ${failure.message}`
+          : 'Unable to save module data to database.',
+        ...(req.params.key === 'certificate_templates' && failure.code ? { diagnosticCode: failure.code } : {}),
+      });
+    }
+  });
+
       app.post('/api/certificate-assets/upload', async (req, res) => {
         const user = getUserSecurityContext(req);
         if (!user.isAdmin && !user.isFocal) {
@@ -1097,22 +1119,6 @@ export function createApp() {
           return res.status(status).json({ success: false, error: message });
         }
       });
-    } catch (error) {
-      const failure = formatCertificateTemplateDatabaseError(error);
-      console.error('[module-data] save failed', {
-        key: req.params.key,
-        code: failure.code,
-        detail: error instanceof Error ? error.message.slice(0, 500) : 'Unknown database error',
-      });
-      return res.status(failure.code === '403' ? 403 : failure.code === '409' ? 409 : 500).json({
-        success: false,
-        error: req.params.key === 'certificate_templates'
-          ? `Unable to save certificate templates. ${failure.message}`
-          : 'Unable to save module data to database.',
-        ...(req.params.key === 'certificate_templates' && failure.code ? { diagnosticCode: failure.code } : {}),
-      });
-    }
-  });
 
   // =========================================================================
   // 2. SWINE RECORDS - STRICT DATABASE SOURCE OF TRUTH
@@ -1276,9 +1282,6 @@ export function createApp() {
     let tag = (pigIdTag || earTagNo || '').trim();
     if (!tag) {
       // Auto-generate authoritative ID if not supplied
-      const currentYear = new Date().getFullYear();
-      const { total } = await getAllSwineRecords();
-      tag = `HIN-${currentYear}-${String(total + 1).padStart(4, '0')}`;
       // Auto-generate authoritative ID atomically from database sequence
       tag = await getNextAuthoritativePigIdTag();
     }
@@ -2299,14 +2302,14 @@ export function createApp() {
       return res.json({ success: true, count: list.length, data: list });
     } catch (err: any) {
       console.warn('Error retrieving messages from database:', err?.message || err);
-      return res.json({ success: true, count: 0, data: [] });
+      return res.status(503).json({ success: false, error: 'Messages are temporarily unavailable.' });
     }
   });
 
   app.post('/api/messages', async (req, res) => {
     const user = getUserSecurityContext(req);
     const payload = req.body;
-    if (!payload || !payload.message) {
+    if (!payload || !(payload.message || payload.content || payload.body)) {
       return res.status(400).json({ success: false, error: 'Message content is required.' });
     }
 
@@ -2327,7 +2330,10 @@ export function createApp() {
 
   app.patch('/api/messages/:id/read', async (req, res) => {
     const { id } = req.params;
+    const user = getUserSecurityContext(req);
     try {
+      const visible = await getAllMessages({ role: user.role, barangay: user.assignedBarangay, userId: user.userId });
+      if (!visible.some(message => message.id === id)) return res.status(404).json({ success: false, error: 'Message not found.' });
       await markMessageRead(id);
       return res.json({ success: true, message: 'Message marked as read.' });
     } catch (err: any) {
@@ -2449,6 +2455,7 @@ export function createApp() {
   // =========================================================================
   app.get('/api/settings', async (req, res) => {
     const key = (req.query.key as string) || 'system_branding';
+    if (!getUserSecurityContext(req).isAdmin && key !== 'system_branding') return res.status(403).json({ success: false, error: 'Administrator access required.' });
     try {
       const value = await getSystemSetting(key);
       return res.json({ success: true, key, value });
@@ -2463,6 +2470,7 @@ export function createApp() {
       return res.status(403).json({ success: false, error: 'Access Denied: Only administrators can update system settings.' });
     }
     const { key, value } = req.body || {};
+    if (!admin.isSuperAdmin && key !== 'system_branding') return res.status(403).json({ success: false, error: 'Only the super administrator can change privileged settings.' });
     if (!key) {
       return res.status(400).json({ success: false, error: 'Setting key is required.' });
     }
@@ -2920,9 +2928,77 @@ export function createApp() {
   // =========================================================================
   // 10. LEGAL DOCUMENTS & ASF REGULATIONS API
   // =========================================================================
-  app.get('/api/legal-documents', (_req, res) => {
-    res.json({ success: true, count: ALL_ASF_REGULATIONS.length, data: ALL_ASF_REGULATIONS });
+  app.get('/api/legal-documents', async (_req, res) => {
+    try {
+      if (!await initPostgresTables()) throw new Error('Database unavailable');
+      const result = await pool.query('SELECT document FROM legal_documents ORDER BY updated_at DESC, id');
+      const documents = await Promise.all(result.rows.map(async (row: { document: import('../types.ts').ASFRegulatoryDocument }) => {
+        const document = row.document;
+        if (!supabaseAdminClient || !document.sourceDocuments) return document;
+        return { ...document, sourceDocuments: await Promise.all(document.sourceDocuments.map(async attachment => {
+          if (!attachment.filePath?.startsWith('legal-documents/') || attachment.filePath.includes('..')) return attachment;
+          const signed = await supabaseAdminClient.storage.from('documents').createSignedUrl(attachment.filePath, 3600);
+          if (signed.error) throw signed.error;
+          return { ...attachment, url: signed.data.signedUrl };
+        })) };
+      }));
+      return res.json({ success: true, count: documents.length, data: documents });
+    } catch {
+      return res.status(503).json({ success: false, error: 'Legal documents are temporarily unavailable.' });
+    }
   });
+
+  app.get('/api/legal-documents/audit-logs', async (_req, res) => {
+    try {
+      const result = await pool.query(`SELECT id::text, document_id AS "documentId", document_title AS "documentTitle",
+        action, actor_name AS "user", actor_role AS role, created_at AS timestamp, details
+        FROM legal_document_audit_logs ORDER BY created_at DESC, id DESC LIMIT 1000`);
+      return res.json({ success: true, data: result.rows });
+    } catch {
+      return res.status(503).json({ success: false, error: 'Legal document audit history is unavailable.' });
+    }
+  });
+
+  const writeLegalDocument: express.RequestHandler = async (req, res) => {
+    const user = getUserSecurityContext(req);
+    if (!user.isAdmin) { res.status(403).json({ success: false, error: 'Administrator access required.' }); return; }
+    const id = req.params.id || req.body?.id;
+    if (typeof id !== 'string' || !id.trim() || id.length > 200) { res.status(400).json({ success: false, error: 'A valid document ID is required.' }); return; }
+    if (req.method !== 'DELETE' && (typeof req.body?.title !== 'string' || !req.body.title.trim() || !Array.isArray(req.body.articles))) {
+      res.status(400).json({ success: false, error: 'Document title and articles are required.' }); return;
+    }
+    const client = await pool.connect().catch(() => null);
+    if (!client) { res.status(503).json({ success: false, error: 'Database unavailable.' }); return; }
+    try {
+      await client.query('BEGIN');
+      const existing = await client.query('SELECT document FROM legal_documents WHERE id = $1 FOR UPDATE', [id]);
+      if (req.method === 'POST' && existing.rowCount) {
+        await client.query('ROLLBACK'); res.status(409).json({ success: false, error: 'Document already exists.' }); return;
+      }
+      if (req.method !== 'POST' && !existing.rowCount) {
+        await client.query('ROLLBACK'); res.status(404).json({ success: false, error: 'Document not found.' }); return;
+      }
+      const previous = existing.rows[0]?.document;
+      const document = { ...req.body, id };
+      let action = req.method === 'POST' ? 'create' : req.method === 'DELETE' ? 'delete' : 'update';
+      if (action === 'update' && document.status === 'archived' && previous?.status !== 'archived') action = 'archive';
+      if (action === 'update' && document.status !== 'archived' && previous?.status === 'archived') action = 'restore';
+      if (req.method === 'DELETE') await client.query('DELETE FROM legal_documents WHERE id = $1', [id]);
+      else await client.query(`INSERT INTO legal_documents (id, document) VALUES ($1, $2)
+        ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document, updated_at = now()`, [id, JSON.stringify(document)]);
+      await client.query(`INSERT INTO legal_document_audit_logs (document_id, document_title, action, actor_id, actor_name, actor_role, details)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, document.title || previous?.title || id, action, user.userId, user.username, user.role, `Document ${action}`]);
+      await client.query('COMMIT');
+      res.status(req.method === 'POST' ? 201 : 200).json({ success: true, data: req.method === 'DELETE' ? { id } : document });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Legal document write failed:', error);
+      res.status(500).json({ success: false, error: 'Unable to save legal document.' });
+    } finally { client.release(); }
+  };
+  app.post('/api/legal-documents', writeLegalDocument);
+  app.put('/api/legal-documents/:id', writeLegalDocument);
+  app.delete('/api/legal-documents/:id', writeLegalDocument);
 
   // =========================================================================
   // 11. ENTERPRISE OFFLINE SYNCHRONIZATION API (IDEMPOTENT BATCH SYNC)
@@ -3013,6 +3089,8 @@ export function createApp() {
       return res.json({ success: true, processedCount: 0, results: [] });
     }
 
+    if (operations.length > 500) return res.status(400).json({ success: false, error: 'Synchronize at most 500 operations per request.' });
+
     const results: Array<{
       clientOperationId: string;
       entityId: string;
@@ -3023,9 +3101,18 @@ export function createApp() {
     }> = [];
 
     for (const op of operations) {
+      if (!op || typeof op !== 'object' || typeof op.clientOperationId !== 'string' || !op.clientOperationId || op.clientOperationId.length > 200 || typeof op.entityId !== 'string') {
+        return res.status(400).json({ success: false, error: 'Every operation requires an operation ID and entity ID.' });
+      }
       const { clientOperationId, operation, entity, entityId, payload } = op;
-
+      let claimed = false;
+      const previousCount = results.length;
       try {
+        if (!['create', 'update', 'delete', 'sell', 'archive', 'upload_media'].includes(operation)) throw new Error('Unsupported synchronization operation.');
+        const claim = await claimSyncOperation(user.userId, clientOperationId, op);
+        if (!claim.claimed && claim.result) { results.push(claim.result); continue; }
+        claimed = true;
+        if (user.isAgent && entity !== 'message') throw new Error('Agent accounts cannot write registry, certificate or media data.');
         if (entity === 'swine') {
           if (user.isAgent) {
             results.push({
@@ -3050,13 +3137,12 @@ export function createApp() {
               results.push({ clientOperationId, entityId, success: false, error: 'Record is outside your assigned barangay.' });
               continue;
             }
+            const replayRecord = await getSwineRecordById(uuidForSyncOperation(`${user.userId}:${clientOperationId}`));
+            if (replayRecord) { results.push({ clientOperationId, entityId, serverEntityId: replayRecord.id, serverPigId: replayRecord.pigIdTag, success: true }); continue; }
             let tag = (payload.pigIdTag || payload.earTagNo || '').trim();
             // If temporary local tag, generate authoritative backend Pig ID
             // If temporary local tag, generate authoritative backend Pig ID from sequence
             if (!tag || tag.startsWith('LOCAL-') || !PIG_ID_TAG_REGEX.test(tag)) {
-              const currentYear = new Date().getFullYear();
-              const { total } = await getAllSwineRecords();
-              tag = `HIN-${currentYear}-${String(total + 1).padStart(4, '0')}`;
               tag = await getNextAuthoritativePigIdTag();
             }
 
@@ -3067,10 +3153,10 @@ export function createApp() {
 
             const cleanRecord = {
               ...payload,
-              id: uuidForSyncOperation(String(clientOperationId || entityId)),
+              id: uuidForSyncOperation(`${user.userId}:${clientOperationId}`),
               pigIdTag: tag,
               earTagNo: tag,
-              registeredBy: payload.registeredBy || user.username,
+              registeredBy: user.username,
             };
 
             const saved = await upsertSwineRecord(cleanRecord);
@@ -3129,15 +3215,17 @@ export function createApp() {
               results.push({
                 clientOperationId,
                 entityId,
-                success: true,
-                error: 'Record already updated or removed.',
+                success: false,
+                error: 'Record is missing or outside your scope.',
               });
             }
           }
         } else if (entity === 'media') {
+          if (!user.isAdmin) throw new Error('Only administrators can upload shared media.');
           const resolvedUrl = payload.fileUrl || payload.base64 || payload.dataUrlOrBase64;
           if (resolvedUrl) {
             const savedMedia = await insertMedia({
+              id: uuidForSyncOperation(`${user.userId}:${clientOperationId}`),
               fileName: payload.fileName || `media-${Date.now()}`,
               fileUrl: resolvedUrl,
               mimeType: payload.mimeType || 'image/jpeg',
@@ -3162,12 +3250,13 @@ export function createApp() {
           }
           const savedCert = await upsertCertificate({
             ...payload,
-            id: payload.id || `cert-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            id: uuidForSyncOperation(`${user.userId}:${clientOperationId}`),
           });
           results.push({ clientOperationId, entityId, serverEntityId: savedCert.id, success: true });
         } else if (entity === 'message') {
           const newMsg = await createMessage({
             ...payload,
+            id: uuidForSyncOperation(`${user.userId}:${clientOperationId}`),
             senderId: user.userId,
             senderName: user.username,
             senderRole: user.role as any,
@@ -3175,7 +3264,7 @@ export function createApp() {
           });
           results.push({ clientOperationId, entityId, serverEntityId: newMsg.id, success: true });
         } else {
-          results.push({ clientOperationId, entityId, success: true });
+          results.push({ clientOperationId, entityId, success: false, error: 'Unsupported synchronization entity.' });
         }
       } catch (err: any) {
         console.error(`Sync error on operation ${clientOperationId}:`, err);
@@ -3185,6 +3274,11 @@ export function createApp() {
           success: false,
           error: err?.message || 'Database transaction error',
         });
+      } finally {
+        if (claimed && results.length > previousCount) {
+          try { await finishSyncOperation(user.userId, clientOperationId, results[results.length - 1]); }
+          catch { results[results.length - 1] = { clientOperationId, entityId, success: false, error: 'Unable to confirm synchronization. Retry shortly.' }; }
+        }
       }
     }
 
@@ -3199,6 +3293,20 @@ export function createApp() {
   // =========================================================================
   // 12. DA HINUNANGAN PUBLIC ASSISTANT API (DEDICATED PUBLIC PORTAL ENDPOINT)
   // =========================================================================
+  app.use(['/api/public/assistant/chat', '/api/assistant/chat'], async (req, res, next) => {
+    if (req.method !== 'POST') return next();
+    if (typeof req.body?.message !== 'string' || !req.body.message.trim() || req.body.message.length > 8000) return res.status(400).json({ success: false, error: 'Enter a message between 1 and 8000 characters.' });
+    const actor = getUserSecurityContext(req).userId || (process.env.VERCEL ? req.get('x-vercel-forwarded-for')?.split(',')[0]?.trim() : req.ip) || 'public';
+    const bucket = createHash('sha256').update(`${req.path}:${actor}`).digest('hex');
+    try {
+      const result = await pool.query(`INSERT INTO assistant_rate_limits (bucket, expires_at) VALUES ($1, now() + interval '1 minute')
+        ON CONFLICT (bucket) DO UPDATE SET hits = CASE WHEN assistant_rate_limits.expires_at < now() THEN 1 ELSE assistant_rate_limits.hits + 1 END,
+        expires_at = CASE WHEN assistant_rate_limits.expires_at < now() THEN now() + interval '1 minute' ELSE assistant_rate_limits.expires_at END RETURNING hits`, [bucket]);
+      if (result.rows[0].hits > 20) { res.set('Retry-After', '60'); return res.status(429).json({ success: false, error: 'Too many messages. Please wait a minute.' }); }
+      return next();
+    } catch { return res.status(503).json({ success: false, error: 'Assistant is temporarily unavailable. Please try again.' }); }
+  });
+
   app.post('/api/public/assistant/chat', async (req, res) => {
     const { message = '' } = req.body || {};
 
@@ -3545,7 +3653,7 @@ Every barangay has an assigned **Barangay Agricultural Focal Person** working al
       if (process.env.GEMINI_API_KEY) {
         try {
           const { GoogleGenAI } = await import('@google/genai');
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { timeout: 40000 } });
 
           const publicSystemPrompt = `You are the official "DA Hinunangan Public Information Assistant" for the Municipal Agriculture Office of Hinunangan, Southern Leyte.
 
@@ -3557,11 +3665,12 @@ STRICT OPERATIONAL RULES:
 5. Keep answers concise, polite, and helpful.`;
 
           const response = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
             contents: message,
             config: {
               systemInstruction: publicSystemPrompt,
               temperature: 0.2,
+              maxOutputTokens: 2048,
             },
           });
 
@@ -4016,7 +4125,7 @@ The DA Hinunangan Swine Registry is engineered as a Progressive Web App (PWA):
       if (process.env.GEMINI_API_KEY) {
         try {
           const { GoogleGenAI } = await import('@google/genai');
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { timeout: 40000 } });
 
           const totalSwine = authorizedRecords.length;
           const readyCount = authorizedRecords.filter(
@@ -4047,11 +4156,12 @@ CRITICAL OPERATIONAL RULES:
 4. Keep answers concise, direct, helpful, and polite.`;
 
           const response = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
             contents: message,
             config: {
               systemInstruction: systemPrompt,
               temperature: 0.2,
+              maxOutputTokens: 2048,
             },
           });
 
@@ -4130,6 +4240,12 @@ How may I assist your agricultural operations today?`,
     }
   });
 
+  app.use('/api', (_req, res) => { res.status(404).json({ success: false, error: 'API route not found.' }); });
+  const handleError: express.ErrorRequestHandler = (error: unknown, _req, res, _next) => {
+    const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 500;
+    res.status(status).json({ success: false, error: status === 413 ? 'Upload exceeds the 4 MB request limit. Use a Storage upload.' : status === 400 ? 'Invalid request body.' : 'Internal server error.' });
+  };
+  app.use(handleError);
   return app;
 }
 

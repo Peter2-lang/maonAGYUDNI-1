@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import { directUpload } from '../../services/directUpload';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   FileText,
   Shield,
@@ -77,7 +78,12 @@ export const ASFOrdinanceModule: React.FC<ASFOrdinanceModuleProps> = ({
   const [isImportHistoryOpen, setIsImportHistoryOpen] = useState(false);
   const [isOriginalViewerOpen, setIsOriginalViewerOpen] = useState(false);
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  useEffect(() => {
+    let active = true;
+    storageService.fetchAsfRegulationsFromApi().then(docs => { if (active) setRegulations(docs); }).catch(error => { if (active) setSuccessToast(error instanceof Error ? error.message : 'Unable to load legal documents.'); });
+    return () => { active = false; };
+  }, []);
 
   const showToast = (msg: string) => {
     setSuccessToast(msg);
@@ -149,33 +155,49 @@ export const ASFOrdinanceModule: React.FC<ASFOrdinanceModuleProps> = ({
     setIsEditModalOpen(true);
   };
 
-  const handleSaveDoc = (doc: ASFRegulatoryDocument, changeSummary?: string) => {
+  const handleSaveDoc = async (doc: ASFRegulatoryDocument, changeSummary?: string) => {
+    try {
     if (docToEdit) {
-      storageService.updateAsfRegulation(doc, currentUser?.name || currentUser?.username || 'Admin', changeSummary);
+      await storageService.updateAsfRegulation(doc, currentUser?.name || currentUser?.username || 'Admin', changeSummary);
       showToast(`Updated "${doc.officialNumber}" successfully.`);
     } else {
-      storageService.addAsfRegulation(doc, currentUser?.name || currentUser?.username || 'Admin');
+      await storageService.addAsfRegulation(doc, currentUser?.name || currentUser?.username || 'Admin');
       showToast(`Created "${doc.officialNumber}" successfully.`);
       setSelectedDocId(doc.id);
     }
     setRegulations(storageService.getAsfRegulations());
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Legal document request failed.');
+      throw error;
+    }
   };
 
-  const handleArchiveDoc = (doc: ASFRegulatoryDocument) => {
-    storageService.archiveAsfRegulation(doc.id, currentUser?.name || currentUser?.username || 'Admin');
+  const handleArchiveDoc = async (doc: ASFRegulatoryDocument) => {
+    try {
+    await storageService.archiveAsfRegulation(doc.id, currentUser?.name || currentUser?.username || 'Admin');
     setRegulations(storageService.getAsfRegulations());
     showToast(`Archived "${doc.officialNumber}". Moved to Archived tab.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Legal document request failed.');
+      
+    }
   };
 
-  const handleRestoreDoc = (doc: ASFRegulatoryDocument) => {
-    storageService.restoreAsfRegulation(doc.id, currentUser?.name || currentUser?.username || 'Admin');
+  const handleRestoreDoc = async (doc: ASFRegulatoryDocument) => {
+    try {
+    await storageService.restoreAsfRegulation(doc.id, currentUser?.name || currentUser?.username || 'Admin');
     setRegulations(storageService.getAsfRegulations());
     showToast(`Restored "${doc.officialNumber}" to active status.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Legal document request failed.');
+      
+    }
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
+    try {
     if (!deleteConfirmDoc) return;
-    storageService.deleteAsfRegulation(deleteConfirmDoc.id);
+    await storageService.deleteAsfRegulation(deleteConfirmDoc.id);
     const updated = storageService.getAsfRegulations();
     setRegulations(updated);
     if (selectedDocId === deleteConfirmDoc.id) {
@@ -183,6 +205,10 @@ export const ASFOrdinanceModule: React.FC<ASFOrdinanceModuleProps> = ({
     }
     showToast(`Permanently deleted "${deleteConfirmDoc.officialNumber}".`);
     setDeleteConfirmDoc(null);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Legal document request failed.');
+      
+    }
   };
 
   const handleResetToOfficialSeeds = () => {
@@ -863,13 +889,16 @@ export const ASFOrdinanceModule: React.FC<ASFOrdinanceModuleProps> = ({
                         type="file"
                         className="hidden"
                         accept=".pdf,image/*"
-                        onChange={e => {
+                        onChange={async e => {
                           if (e.target.files && e.target.files[0]) {
                             const file = e.target.files[0];
+                            try {
+                            const uploaded = await directUpload(file, 'legal-documents');
                             const newAttachment = {
                               id: `att-${Date.now()}`,
                               name: file.name,
-                              url: URL.createObjectURL(file),
+                              url: uploaded.fileUrl,
+                              filePath: uploaded.filePath,
                               uploadedAt: new Date().toISOString().split('T')[0],
                               fileSize: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
                             };
@@ -877,7 +906,8 @@ export const ASFOrdinanceModule: React.FC<ASFOrdinanceModuleProps> = ({
                               ...selectedDoc,
                               sourceDocuments: [...(selectedDoc.sourceDocuments || []), newAttachment],
                             };
-                            handleSaveDoc(updated, `Uploaded scan file: ${file.name}`);
+                            await handleSaveDoc(updated, `Uploaded scan file: ${file.name}`);
+                            } catch (error) { showToast(error instanceof Error ? error.message : 'Unable to upload document.'); }
                           }
                         }}
                       />

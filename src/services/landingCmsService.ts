@@ -1,3 +1,5 @@
+import { directUpload } from './directUpload';
+import { request } from './http';
 import { INITIAL_LANDING_CMS_CONFIG } from '../data/initialLandingCmsData';
 import { LandingCmsConfig, LegalDocumentsLandingConfig, MediaItem } from '../types/landingCms';
 import { storageService } from './storageService';
@@ -31,16 +33,14 @@ function getAuthHeaders(): Record<string, string> {
   const user = storageService.getCurrentUser();
   return {
     'Content-Type': 'application/json',
+    ...(storageService.getSessionToken() ? { Authorization: `Bearer ${storageService.getSessionToken()}` } : {}),
     ...(user ? {
-      'x-user-role': user.role,
-      'x-user-id': user.id,
-      'x-user-name': user.username || user.email.split('@')[0],
     } : {}),
   };
 }
 
 async function readConfigResponse(path: string): Promise<LandingCmsConfig> {
-  const response = await fetch(path, {
+  const response = await request(path, {
     method: 'GET',
     headers: getAuthHeaders(),
     cache: 'no-store',
@@ -53,7 +53,7 @@ async function readConfigResponse(path: string): Promise<LandingCmsConfig> {
 }
 
 async function writeConfig(path: string, method: 'PUT' | 'POST', config: LandingCmsConfig): Promise<LandingCmsConfig> {
-  const response = await fetch(path, {
+  const response = await request(path, {
     method,
     headers: getAuthHeaders(),
     body: JSON.stringify(config),
@@ -99,23 +99,11 @@ async function replaceInlineImageDataUrls(value: unknown, memo = new Map<string,
       'image/webp': 'webp',
       'image/gif': 'gif',
     };
-    const response = await fetch('/api/media/upload', {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        fileName: `landing-image.${extensionByMime[mimeType]}`,
-        mimeType,
-        base64: value,
-        category: 'landing-cms',
-      }),
-      cache: 'no-store',
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok || data?.success !== true || typeof data.fileUrl !== 'string' || !data.filePath) {
-      throw new Error(data?.error || `Unable to move landing-page image into Supabase Storage (HTTP ${response.status}).`);
-    }
-    memo.set(value, data.fileUrl);
-    return data.fileUrl;
+    const binary = Uint8Array.from(atob(payload), char => char.charCodeAt(0));
+    const file = new File([binary], `landing-image.${extensionByMime[mimeType]}`, { type: mimeType });
+    const uploaded = await directUpload(file, 'landing-cms');
+    memo.set(value, uploaded.fileUrl);
+    return uploaded.fileUrl;
   }
   if (Array.isArray(value)) {
     return Promise.all(value.map(item => replaceInlineImageDataUrls(item, memo)));
@@ -197,29 +185,7 @@ export const landingCmsService = {
     if (file.size === 0 || file.size > 15 * 1024 * 1024) {
       throw new Error('The selected file is empty or exceeds the 15 MB limit.');
     }
-    const base64 = await readFileAsDataUrl(file);
-    const response = await fetch('/api/admin/landing-cms/upload', {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        fileName: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        base64,
-        category,
-      }),
-      cache: 'no-store',
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok || data?.success !== true || typeof data.fileUrl !== 'string' || data.fileUrl.startsWith('blob:')) {
-      throw new Error(data?.error || `Unable to upload landing page media (HTTP ${response.status}).`);
-    }
-    return {
-      filePath: data.filePath,
-      fileUrl: data.fileUrl,
-      fileSize: data.fileSize,
-      fileName: data.fileName,
-      mimeType: data.mimeType,
-    };
+    return directUpload(file, category);
   },
 
   async addMediaItem(item: Omit<MediaItem, 'id' | 'uploadDate'>): Promise<MediaItem> {

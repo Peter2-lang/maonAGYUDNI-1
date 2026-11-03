@@ -1,3 +1,4 @@
+import { request } from '../../services/http';
 import React, { useState, useEffect } from 'react';
 import {
   Database,
@@ -115,7 +116,7 @@ export const DatabaseConfiguration: React.FC = () => {
     const uriToTest = getEffectiveUri();
 
     try {
-      const res = await fetch('/api/admin/database/test', {
+      const res = await request('/api/admin/database/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionString: uriToTest }),
@@ -163,7 +164,7 @@ export const DatabaseConfiguration: React.FC = () => {
     setIsSaved(false);
     setTestResult(null);
     try {
-      const res = await fetch('/api/admin/database/save', {
+      const res = await request('/api/admin/database/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionString: uriToSave }),

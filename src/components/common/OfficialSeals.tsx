@@ -63,9 +63,10 @@ export function useOfficialLogos() {
  * with automatic fallback to custom uploaded images if configured.
  */
 
-export const SealBagongPilipinas: React.FC<{ className?: string; customUrl?: string; showSubtext?: boolean }> = ({
+export const SealBagongPilipinas: React.FC<{ className?: string; style?: React.CSSProperties; customUrl?: string; showSubtext?: boolean }> = ({
   className = 'w-9 h-9',
   customUrl,
+  style,
   showSubtext = false,
 }) => {
   const logos = useOfficialLogos();
@@ -76,12 +77,14 @@ export const SealBagongPilipinas: React.FC<{ className?: string; customUrl?: str
       <img
         src={activeUrl}
         alt="Bagong Pilipinas Seal"
+        style={style}
         className={`${className} shrink-0 select-none object-contain rounded-full`}
         referrerPolicy="no-referrer"
       />
     ) : (
       <svg
         viewBox="0 0 100 100"
+        style={style}
         className={`${className} shrink-0 select-none shadow-sm rounded-full`}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -127,9 +130,10 @@ export const SealBagongPilipinas: React.FC<{ className?: string; customUrl?: str
   return sealGraphic;
 };
 
-export const SealDA: React.FC<{ className?: string; customUrl?: string }> = ({
+export const SealDA: React.FC<{ className?: string; style?: React.CSSProperties; customUrl?: string }> = ({
   className = 'w-9 h-9',
   customUrl,
+  style,
 }) => {
   const logos = useOfficialLogos();
   const activeUrl = customUrl || logos['logo-da'] || logos['cat-da'];
@@ -139,6 +143,7 @@ export const SealDA: React.FC<{ className?: string; customUrl?: string }> = ({
       <img
         src={activeUrl}
         alt="Department of Agriculture Seal"
+        style={style}
         className={`${className} shrink-0 select-none object-contain rounded-full`}
         referrerPolicy="no-referrer"
       />
@@ -148,7 +153,8 @@ export const SealDA: React.FC<{ className?: string; customUrl?: string }> = ({
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`${className} shrink-0 select-none shadow-sm rounded-full`}
+      style={style}
+        className={`${className} shrink-0 select-none shadow-sm rounded-full`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -187,9 +193,10 @@ export const SealDA: React.FC<{ className?: string; customUrl?: string }> = ({
   );
 };
 
-export const SealMunicipality: React.FC<{ className?: string; customUrl?: string }> = ({
+export const SealMunicipality: React.FC<{ className?: string; style?: React.CSSProperties; customUrl?: string }> = ({
   className = 'w-9 h-9',
   customUrl,
+  style,
 }) => {
   const logos = useOfficialLogos();
   const activeUrl = customUrl || logos['logo-mun'] || logos['cat-municipal'] || logos['logo-municipal'];
@@ -199,6 +206,7 @@ export const SealMunicipality: React.FC<{ className?: string; customUrl?: string
       <img
         src={activeUrl}
         alt="Municipality of Hinunangan Official Seal"
+        style={style}
         className={`${className} shrink-0 select-none object-contain rounded-full`}
         referrerPolicy="no-referrer"
       />
@@ -208,7 +216,8 @@ export const SealMunicipality: React.FC<{ className?: string; customUrl?: string
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`${className} shrink-0 select-none shadow-sm rounded-full`}
+      style={style}
+        className={`${className} shrink-0 select-none shadow-sm rounded-full`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -258,9 +267,10 @@ export const SealMunicipality: React.FC<{ className?: string; customUrl?: string
   );
 };
 
-export const SealTaskForce: React.FC<{ className?: string; customUrl?: string }> = ({
+export const SealTaskForce: React.FC<{ className?: string; style?: React.CSSProperties; customUrl?: string }> = ({
   className = 'w-9 h-9',
   customUrl,
+  style,
 }) => {
   const logos = useOfficialLogos();
   const activeUrl = customUrl || logos['logo-taskforce'] || logos['cat-taskforce'];
@@ -270,6 +280,7 @@ export const SealTaskForce: React.FC<{ className?: string; customUrl?: string }>
       <img
         src={activeUrl}
         alt="Bantay ASF Task Force Seal"
+        style={style}
         className={`${className} shrink-0 select-none object-contain rounded-full`}
         referrerPolicy="no-referrer"
       />
@@ -279,7 +290,8 @@ export const SealTaskForce: React.FC<{ className?: string; customUrl?: string }>
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`${className} shrink-0 select-none shadow-sm rounded-full`}
+      style={style}
+        className={`${className} shrink-0 select-none shadow-sm rounded-full`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -314,9 +326,10 @@ export const SealTaskForce: React.FC<{ className?: string; customUrl?: string }>
   );
 };
 
-export const SealSLSU: React.FC<{ className?: string; customUrl?: string }> = ({
+export const SealSLSU: React.FC<{ className?: string; style?: React.CSSProperties; customUrl?: string }> = ({
   className = 'w-9 h-9',
   customUrl,
+  style,
 }) => {
   const logos = useOfficialLogos();
   const activeUrl = customUrl || logos['logo-slsu'] || logos['cat-slsu'];
@@ -326,6 +339,7 @@ export const SealSLSU: React.FC<{ className?: string; customUrl?: string }> = ({
       <img
         src={activeUrl}
         alt="Southern Leyte State University Seal"
+        style={style}
         className={`${className} shrink-0 select-none object-contain rounded-full`}
         referrerPolicy="no-referrer"
       />
@@ -335,7 +349,8 @@ export const SealSLSU: React.FC<{ className?: string; customUrl?: string }> = ({
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`${className} shrink-0 select-none shadow-sm rounded-full`}
+      style={style}
+        className={`${className} shrink-0 select-none shadow-sm rounded-full`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -363,9 +378,10 @@ export const SealSLSU: React.FC<{ className?: string; customUrl?: string }> = ({
   );
 };
 
-export const SealExtension: React.FC<{ className?: string; customUrl?: string }> = ({
+export const SealExtension: React.FC<{ className?: string; style?: React.CSSProperties; customUrl?: string }> = ({
   className = 'w-9 h-9',
   customUrl,
+  style,
 }) => {
   const logos = useOfficialLogos();
   const activeUrl = customUrl || logos['logo-extension'] || logos['cat-extension'];
@@ -375,6 +391,7 @@ export const SealExtension: React.FC<{ className?: string; customUrl?: string }>
       <img
         src={activeUrl}
         alt="SLSU Extension Center Seal"
+        style={style}
         className={`${className} shrink-0 select-none object-contain rounded-full`}
         referrerPolicy="no-referrer"
       />
@@ -384,7 +401,8 @@ export const SealExtension: React.FC<{ className?: string; customUrl?: string }>
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`${className} shrink-0 select-none shadow-sm rounded-full`}
+      style={style}
+        className={`${className} shrink-0 select-none shadow-sm rounded-full`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -413,8 +431,9 @@ export const SealExtension: React.FC<{ className?: string; customUrl?: string }>
 export const SealBarangay: React.FC<{
   barangayName?: string;
   className?: string;
+  style?: React.CSSProperties;
   customUrl?: string;
-}> = ({ barangayName = 'NAVA', className = 'w-9 h-9', customUrl }) => {
+}> = ({ barangayName = 'NAVA', className = 'w-9 h-9', customUrl, style }) => {
   const logos = useOfficialLogos();
   const normalized = (barangayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const activeUrl =
@@ -429,6 +448,7 @@ export const SealBarangay: React.FC<{
       <img
         src={activeUrl}
         alt={`Barangay ${barangayName} Official Seal`}
+        style={style}
         className={`${className} shrink-0 select-none object-contain rounded-full`}
         referrerPolicy="no-referrer"
       />
@@ -440,6 +460,7 @@ export const SealBarangay: React.FC<{
     return (
       <svg
         viewBox="0 0 100 100"
+        style={style}
         className={`${className} shrink-0 select-none shadow-sm rounded-full`}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -488,6 +509,7 @@ export const SealBarangay: React.FC<{
     return (
       <svg
         viewBox="0 0 100 100"
+        style={style}
         className={`${className} shrink-0 select-none shadow-sm rounded-full`}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -537,7 +559,8 @@ export const SealBarangay: React.FC<{
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`${className} shrink-0 select-none shadow-sm rounded-full`}
+      style={style}
+        className={`${className} shrink-0 select-none shadow-sm rounded-full`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -586,9 +609,10 @@ export const SealBarangay: React.FC<{
   );
 };
 
-export const SealProvince: React.FC<{ className?: string; customUrl?: string }> = ({
+export const SealProvince: React.FC<{ className?: string; style?: React.CSSProperties; customUrl?: string }> = ({
   className = 'w-9 h-9',
   customUrl,
+  style,
 }) => {
   const logos = useOfficialLogos();
   const activeUrl = customUrl || logos['logo-province'] || logos['cat-province'];
@@ -598,6 +622,7 @@ export const SealProvince: React.FC<{ className?: string; customUrl?: string }> 
       <img
         src={activeUrl}
         alt="Province of Southern Leyte Seal"
+        style={style}
         className={`${className} shrink-0 select-none object-contain rounded-full`}
         referrerPolicy="no-referrer"
       />
@@ -607,7 +632,8 @@ export const SealProvince: React.FC<{ className?: string; customUrl?: string }> 
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`${className} shrink-0 select-none shadow-sm rounded-full`}
+      style={style}
+        className={`${className} shrink-0 select-none shadow-sm rounded-full`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -635,28 +661,28 @@ export const DynamicSeal: React.FC<{
   const style = size ? { width: size, height: size } : undefined;
 
   if (normalized === 'bagong-pilipinas' || normalized === 'bp') {
-    return <SealBagongPilipinas className={className} customUrl={logos['logo-bagong-pilipinas'] || logos['cat-bagong-pilipinas']} showSubtext />;
+    return <SealBagongPilipinas className={className} style={style} customUrl={logos['logo-bagong-pilipinas'] || logos['cat-bagong-pilipinas']} showSubtext />;
   }
   if (normalized === 'barangay' || normalized === 'brgy') {
-    return <SealBarangay barangayName={barangayName} className={className} customUrl={logos['logo-barangay'] || logos[`logo-brgy-${barangayName.toLowerCase()}`]} />;
+    return <SealBarangay barangayName={barangayName} className={className} style={style} customUrl={logos['logo-barangay'] || logos[`logo-brgy-${barangayName.toLowerCase()}`]} />;
   }
   if (normalized === 'province') {
-    return <SealProvince className={className} customUrl={logos['logo-province']} />;
+    return <SealProvince className={className} style={style} customUrl={logos['logo-province']} />;
   }
   if (normalized === 'da') {
-    return <SealDA className={className} customUrl={logos['logo-da'] || logos['cat-da']} />;
+    return <SealDA className={className} style={style} customUrl={logos['logo-da'] || logos['cat-da']} />;
   }
   if (normalized === 'mun' || normalized === 'municipality' || normalized === 'hinunangan') {
-    return <SealMunicipality className={className} customUrl={logos['logo-mun'] || logos['cat-municipal']} />;
+    return <SealMunicipality className={className} style={style} customUrl={logos['logo-mun'] || logos['cat-municipal']} />;
   }
   if (normalized === 'taskforce' || normalized === 'asf' || normalized === 'bai') {
-    return <SealTaskForce className={className} customUrl={logos['logo-taskforce'] || logos['cat-taskforce']} />;
+    return <SealTaskForce className={className} style={style} customUrl={logos['logo-taskforce'] || logos['cat-taskforce']} />;
   }
   if (normalized === 'slsu') {
-    return <SealSLSU className={className} customUrl={logos['logo-slsu'] || logos['cat-slsu']} />;
+    return <SealSLSU className={className} style={style} customUrl={logos['logo-slsu'] || logos['cat-slsu']} />;
   }
   if (normalized === 'extension' || normalized === 'ext') {
-    return <SealExtension className={className} customUrl={logos['logo-extension'] || logos['cat-extension']} />;
+    return <SealExtension className={className} style={style} customUrl={logos['logo-extension'] || logos['cat-extension']} />;
   }
   if (normalized === 'sidebar' || normalized === 'system' || normalized === 'header' || normalized === 'footer' || normalized === 'login') {
     const custom = logos[`logo-${normalized}`] || logos['logo-system'] || logos['logo-sidebar'] || logos['logo-header'];
@@ -666,7 +692,7 @@ export const DynamicSeal: React.FC<{
           src={custom}
           alt={`${type} Logo`}
           style={style}
-          className={`${className} shrink-0 select-none object-contain rounded-full`}
+        className={`${className} shrink-0 select-none object-contain rounded-full`}
           referrerPolicy="no-referrer"
         />
       );

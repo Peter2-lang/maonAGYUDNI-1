@@ -151,6 +151,7 @@ export interface SwineRecord {
   customFields?: Record<string, any>;
   registeredBy: string;
   registeredAt: string;
+  expectedUpdatedAt?: string;
   updatedAt: string;
   isSynced?: boolean;
 }
@@ -235,6 +236,7 @@ export interface LegalTaskForceMember {
 }
 
 export interface LegalSourceAttachment {
+  filePath?: string;
   id: string;
   name: string;
   originalFileName?: string;

@@ -1,3 +1,4 @@
+import { request } from './http';
 import { Barangay, SwineRecord, UserAccount, UserRole } from '../types';
 import { storageService } from './storageService';
 import { HINUNANGAN_BARANGAYS } from '../data/barangays';
@@ -894,10 +895,11 @@ export const assistantService = {
     history: Array<{ role: 'user' | 'assistant'; text: string }> = []
   ): Promise<AssistantResponse> {
     try {
-      const res = await fetch('/api/public/assistant/chat', {
+      const res = await request('/api/public/assistant/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(storageService.getSessionToken() ? { Authorization: `Bearer ${storageService.getSessionToken()}` } : {}),
         },
         body: JSON.stringify({
           message,
@@ -943,14 +945,11 @@ export const assistantService = {
 
     // Mode B: Authenticated System Chatbot
     try {
-      const res = await fetch('/api/assistant/chat', {
+      const res = await request('/api/assistant/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-role': currentUser?.role || currentRole,
-          'x-user-id': currentUser?.id || '',
-          'x-user-name': currentUser?.name || currentUser?.fullName || 'User',
-          'x-user-assigned-barangay': currentUser?.assignedBarangay || '',
+          ...(storageService.getSessionToken() ? { Authorization: `Bearer ${storageService.getSessionToken()}` } : {}),
         },
         body: JSON.stringify({
           message,

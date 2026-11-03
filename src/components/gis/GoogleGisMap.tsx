@@ -411,6 +411,10 @@ export const GoogleGisMap: React.FC<GoogleGisMapProps> = ({
     }
   };
 
+  if (!import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim()) {
+    return <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-900">Google Maps is unavailable. Select the Leaflet map to continue.</div>;
+  }
+
   return (
     <div className="relative w-full h-[min(66dvh,720px)] min-h-[320px] overflow-hidden rounded-2xl border border-stone-200 bg-stone-900 shadow-xl select-none md:h-[min(76dvh,900px)] 2xl:h-[min(82dvh,1100px)]">
       {/* Top Warning Banner for Access Control */}

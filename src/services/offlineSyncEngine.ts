@@ -1,3 +1,5 @@
+import { getSessionScope } from './sessionScope';
+import { request } from './http';
 /**
  * Central Offline Synchronization Engine
  * Handles automatic network detection, background syncing, topological queue execution,
@@ -139,7 +141,7 @@ class OfflineSyncEngine {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-        const res = await fetch('/api/health', {
+        const res = await request('/api/health', {
           method: 'GET',
           signal: controller.signal,
           cache: 'no-store',
@@ -195,6 +197,8 @@ class OfflineSyncEngine {
       return { success: false, pushedCount: 0, pulledCount: 0, error: 'No internet connection or server unreachable.' };
     }
 
+    const syncOwner = getSessionScope();
+    if (syncOwner === 'anonymous') return { success: false, pushedCount: 0, pulledCount: 0, error: 'Sign in before synchronizing.' };
     this.isSyncInProgress = true;
     this.syncState = 'SYNCING';
     this.broadcastStatus();
@@ -216,11 +220,6 @@ class OfflineSyncEngine {
         const sessionToken = storageService.getSessionToken();
         if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
         if (user) {
-          headers['x-user-role'] = user.role || 'focal';
-          headers['x-user-id'] = user.id || '';
-          headers['x-user-name'] = user.username || user.name || '';
-          if (user.assignedBarangay) headers['x-user-assigned-barangay'] = user.assignedBarangay;
-          if (user.barangay_id) headers['x-user-barangay-id'] = user.barangay_id;
         }
 
         const pushPayload = {
@@ -233,7 +232,7 @@ class OfflineSyncEngine {
           })),
         };
 
-        const pushRes = await fetch('/api/sync/push', {
+        const pushRes = await request('/api/sync/push', {
           method: 'POST',
           headers,
           body: JSON.stringify(pushPayload),
@@ -244,6 +243,7 @@ class OfflineSyncEngine {
           throw new Error(failure?.error || `Database rejected sync push (HTTP ${pushRes.status}).`);
         }
         const pushData = await pushRes.json();
+        if (getSessionScope() !== syncOwner) throw new Error('Account changed during synchronization. Retry after signing in.');
         if (!pushData.success || !Array.isArray(pushData.results)) {
           throw new Error('Database returned an invalid sync-push response.');
         }
@@ -294,19 +294,15 @@ class OfflineSyncEngine {
       const sessionToken = storageService.getSessionToken();
       if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
       if (user) {
-        headers['x-user-role'] = user.role || 'focal';
-        headers['x-user-id'] = user.id || '';
-        headers['x-user-name'] = user.username || user.name || '';
-        if (user.assignedBarangay) headers['x-user-assigned-barangay'] = user.assignedBarangay;
-        if (user.barangay_id) headers['x-user-barangay-id'] = user.barangay_id;
       }
 
-      const pullRes = await fetch('/api/sync/pull', { method: 'GET', headers });
+      const pullRes = await request('/api/sync/pull', { method: 'GET', headers });
       if (!pullRes.ok) {
         const failure = await pullRes.json().catch(() => null);
         throw new Error(failure?.error || `Database rejected sync pull (HTTP ${pullRes.status}).`);
       }
       const pullData = await pullRes.json();
+      if (getSessionScope() !== syncOwner) throw new Error('Account changed during synchronization. Retry after signing in.');
       if (!pullData.success || !pullData.data) {
         throw new Error(pullData.error || 'Database returned an invalid sync-pull response.');
       }
@@ -409,6 +405,7 @@ class OfflineSyncEngine {
   public async queueSwineUpdate(record: SwineRecord): Promise<void> {
     const localRecord: SwineRecord = {
       ...record,
+      expectedUpdatedAt: record.expectedUpdatedAt || record.updatedAt,
       isSynced: false,
       updatedAt: new Date().toISOString(),
     };
@@ -453,7 +450,7 @@ class OfflineSyncEngine {
         updatedAt: new Date().toISOString(),
       };
       await indexedDbService.put('swineRecords', updated);
-      await indexedDbService.enqueueSyncItem('sell', 'swine', id, { readyToSell, priceEstimate }, 2);
+      await indexedDbService.enqueueSyncItem('sell', 'swine', id, { readyToSell, priceEstimate, expectedUpdatedAt: local.expectedUpdatedAt || local.updatedAt }, 2);
 
       const currentList = storageService.getSwineRecords();
       const updatedList = currentList.map(s => (s.id === id ? updated : s));
