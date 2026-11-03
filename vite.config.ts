@@ -14,7 +14,8 @@ export default defineConfig(() => {
         workbox: {
           cleanupOutdatedCaches: true,
           maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json,geojson}'],
+          globPatterns: ['**/*.{js,css,ico,png,svg,woff,woff2,json,geojson}'],
+          additionalManifestEntries: [{ url: '/index.html', revision: String(Date.now()) }],
           skipWaiting: true,
           clientsClaim: true,
           navigateFallback: '/index.html',
@@ -25,21 +26,6 @@ export default defineConfig(() => {
             /^\/workbox-/,
           ],
           runtimeCaching: [
-            {
-              urlPattern: /^\/api\//i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'api-runtime-cache',
-                networkTimeoutSeconds: 8,
-                expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 15, // 15 minutes max
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
